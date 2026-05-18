@@ -1,1 +1,209 @@
-web: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Young, sporty theme - Emerald Green + Dark */
+  --background: oklch(0.98 0.005 155);
+  --foreground: oklch(0.15 0.02 160);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0.02 160);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0.02 160);
+  --primary: oklch(0.65 0.2 155);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.95 0.01 155);
+  --secondary-foreground: oklch(0.25 0.02 160);
+  --muted: oklch(0.95 0.008 155);
+  --muted-foreground: oklch(0.5 0.02 160);
+  --accent: oklch(0.75 0.18 85);
+  --accent-foreground: oklch(0.25 0.02 160);
+  --destructive: oklch(0.6 0.22 25);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.9 0.01 155);
+  --input: oklch(0.92 0.01 155);
+  --ring: oklch(0.65 0.2 155);
+  --chart-1: oklch(0.65 0.2 155);
+  --chart-2: oklch(0.75 0.18 85);
+  --chart-3: oklch(0.6 0.15 230);
+  --chart-4: oklch(0.7 0.2 330);
+  --chart-5: oklch(0.55 0.15 280);
+  --radius: 1rem;
+  --sidebar: oklch(0.18 0.02 160);
+  --sidebar-foreground: oklch(0.95 0 0);
+  --sidebar-primary: oklch(0.65 0.2 155);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.25 0.02 160);
+  --sidebar-accent-foreground: oklch(0.95 0 0);
+  --sidebar-border: oklch(0.28 0.02 160);
+  --sidebar-ring: oklch(0.65 0.2 155);
+}
+
+.dark {
+  --background: oklch(0.15 0.02 160);
+  --foreground: oklch(0.95 0 0);
+  --card: oklch(0.18 0.02 160);
+  --card-foreground: oklch(0.95 0 0);
+  --popover: oklch(0.18 0.02 160);
+  --popover-foreground: oklch(0.95 0 0);
+  --primary: oklch(0.65 0.2 155);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.25 0.02 160);
+  --secondary-foreground: oklch(0.95 0 0);
+  --muted: oklch(0.25 0.02 160);
+  --muted-foreground: oklch(0.7 0 0);
+  --accent: oklch(0.75 0.18 85);
+  --accent-foreground: oklch(0.15 0.02 160);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.95 0 0);
+  --border: oklch(0.28 0.02 160);
+  --input: oklch(0.28 0.02 160);
+  --ring: oklch(0.65 0.2 155);
+  --chart-1: oklch(0.7 0.2 155);
+  --chart-2: oklch(0.75 0.18 85);
+  --chart-3: oklch(0.65 0.15 230);
+  --chart-4: oklch(0.75 0.2 330);
+  --chart-5: oklch(0.6 0.15 280);
+  --sidebar: oklch(0.12 0.02 160);
+  --sidebar-foreground: oklch(0.95 0 0);
+  --sidebar-primary: oklch(0.65 0.2 155);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.2 0.02 160);
+  --sidebar-accent-foreground: oklch(0.95 0 0);
+  --sidebar-border: oklch(0.25 0.02 160);
+  --sidebar-ring: oklch(0.65 0.2 155);
+}
+
+@theme inline {
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback', ui-monospace, monospace;
+  --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    /* Fix mobile scroll bounce showing white */
+    background: var(--background);
+    overscroll-behavior-y: none;
+  }
+  body {
+    @apply bg-background text-foreground;
+    /* Prevent rubber-band white flash on iOS */
+    overscroll-behavior-y: none;
+    min-height: 100vh;
+  }
+  /* Ensure html and body fill viewport */
+  html, body {
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* Custom utilities for sports booking app */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+}
+
+/* Custom scrollbar - modern minimal style */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(0.7 0.05 155);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.5 0.1 155);
+}
+
+/* Time slot animations */
+.slot-card {
+  @apply transition-all duration-200 ease-out;
+}
+.slot-card:hover:not(:disabled) {
+  @apply scale-[1.02] shadow-lg;
+}
+.slot-card:active:not(:disabled) {
+  @apply scale-[0.98];
+}
+
+/* Glass morphism effect */
+.glass {
+  @apply bg-white/80 backdrop-blur-xl;
+}
+
+/* Gradient text */
+.gradient-text {
+  @apply bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent;
+}
+
+/* Pulse animation for live status */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.2); }
+}
+.pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* Smooth page transitions */
+.page-transition {
+  @apply transition-all duration-300 ease-out;
+}
+
+/* Card hover effect */
+.card-hover {
+  @apply transition-all duration-300;
+}
+.card-hover:hover {
+  @apply -translate-y-1 shadow-xl;
+}

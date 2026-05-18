@@ -1,160 +1,169 @@
-from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Date, Time, Boolean,
-    ForeignKey, Text, Enum as SQLEnum, Numeric
-)
-from sqlalchemy.orm import relationship
-from datetime import datetime
-from app.core.database import Base
-from app.core.config import (
-    UserRole, UserStatus, FieldType, FieldStatus,
-    BookingStatus, PaymentMethod, PaymentStatus,
-    MembershipType, ServiceStatus, ShiftType
-)
+"use client";
 
+import Link from "next/link";
+import { motion } from "framer-motion";
+import Navbar from "@/components/Navbar";
+import { 
+  ArrowRight, Calendar, Clock, Shield, Star, 
+  Zap, Users, MapPin, Sparkles, ChevronRight
+} from "lucide-react";
 
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    ho_ten = Column(String(100), nullable=False)
-    email = Column(String(100), unique=True, index=True, nullable=False)
-    sdt = Column(String(15), unique=True, index=True, nullable=False)
-    mat_khau_hash = Column(String(255), nullable=False)
-    vai_tro = Column(SQLEnum(UserRole), nullable=False, default=UserRole.KHACH_HANG)
-    trang_thai = Column(SQLEnum(UserStatus), nullable=False, default=UserStatus.HOAT_DONG)
-    ngay_tao = Column(DateTime, default=datetime.utcnow)
+const FEATURES = [
+  { icon: Calendar, title: "Đặt Online 24/7", desc: "Xem lịch trống và đặt sân bất kỳ lúc nào, mọi nơi.", color: "from-primary to-primary/60" },
+  { icon: Shield, title: "Thanh Toán An Toàn", desc: "QR ngân hàng, hóa đơn rõ ràng minh bạch.", color: "from-accent to-accent/60" },
+  { icon: Clock, title: "Khung Giờ Linh Hoạt", desc: "Slot từ 30 phút đến 3 giờ, dễ chọn theo lịch.", color: "from-chart-3 to-chart-3/60" },
+  { icon: Star, title: "Thẻ Thành Viên", desc: "Ưu đãi 5-15% cho thành viên thân thiết.", color: "from-chart-4 to-chart-4/60" },
+];
 
-    bookings = relationship("Booking", back_populates="khach_hang", foreign_keys="Booking.khach_hang_id")
-    memberships = relationship("Membership", back_populates="khach_hang")
-    shifts = relationship("Shift", back_populates="nhan_vien")
-    feedbacks = relationship("Feedback", back_populates="khach_hang")
+const STATS = [
+  { value: "50+", label: "Sân bóng" },
+  { value: "10K+", label: "Lượt đặt" },
+  { value: "4.8", label: "Đánh giá" },
+  { value: "24/7", label: "Hỗ trợ" },
+];
 
+export default function HomePage() {
+  return (
+    <>
+      <Navbar />
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 -z-10">
+          <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-gradient-to-bl from-primary/20 to-transparent rounded-full blur-3xl" />
+          <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-accent/20 to-transparent rounded-full blur-3xl" />
+        </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24 lg:py-32">
+          <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+            <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.6 }}>
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6">
+                <Sparkles className="w-4 h-4" /><span>Ứng dụng đặt sân #1 Việt Nam</span>
+              </div>
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-display font-bold text-foreground leading-[1.1] mb-6 text-balance">
+                Đặt sân bóng<br />
+                <span className="gradient-text">nhanh & tiện lợi</span>
+              </h1>
+              <p className="text-lg text-muted-foreground mb-8 leading-relaxed max-w-lg">
+                Xem lịch trống real-time, chọn khung giờ, thanh toán QR — chỉ trong 3 bước. Không gọi điện, không chờ xác nhận.
+              </p>
+              <div className="flex flex-wrap gap-4">
+                <Link href="/booking" className="group inline-flex items-center gap-2 px-6 py-4 bg-primary text-primary-foreground rounded-2xl font-semibold shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:scale-105 transition-all duration-300">
+                  <span>Đặt sân ngay</span>
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </Link>
+                <Link href="/register" className="inline-flex items-center gap-2 px-6 py-4 border-2 border-border text-foreground rounded-2xl font-semibold hover:bg-secondary hover:border-primary/20 transition-all duration-300">
+                  Đăng ký thành viên
+                </Link>
+              </div>
+              <div className="grid grid-cols-4 gap-4 mt-12 pt-8 border-t border-border">
+                {STATS.map((stat, i) => (
+                  <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 + i * 0.1 }}>
+                    <div className="font-display text-2xl sm:text-3xl font-bold text-foreground">{stat.value}</div>
+                    <div className="text-xs sm:text-sm text-muted-foreground">{stat.label}</div>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.6, delay: 0.2 }} className="relative">
+              <div className="relative aspect-square lg:aspect-[4/3] rounded-3xl overflow-hidden shadow-2xl shadow-primary/20">
+                <div className="absolute inset-0 bg-gradient-to-br from-primary to-primary/80">
+                  <div className="absolute inset-4 border-2 border-white/30 rounded-xl" />
+                  <div className="absolute inset-y-4 left-1/2 w-px bg-white/30" />
+                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 border-2 border-white/30 rounded-full" />
+                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-white/50 rounded-full" />
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 w-32 h-12 border-2 border-white/30 border-t-0 rounded-b-xl" />
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-32 h-12 border-2 border-white/30 border-b-0 rounded-t-xl" />
+                </div>
+                <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }} className="absolute top-8 right-8 text-6xl">⚽</motion.div>
+                <div className="absolute bottom-4 left-4 right-4 p-4 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-primary rounded-full pulse-dot" />
+                      <span className="text-sm font-medium text-primary">Đang có sẵn</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-accent">
+                      <Star className="w-4 h-4 fill-accent" /><span className="text-sm font-semibold">4.8</span>
+                    </div>
+                  </div>
+                  <div className="font-display font-bold text-lg text-foreground mb-1">Sân Bóng Đá Premium</div>
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span className="flex items-center gap-1"><MapPin className="w-4 h-4" />TP.HCM</span>
+                    <span className="flex items-center gap-1"><Users className="w-4 h-4" />5v5, 7v7</span>
+                  </div>
+                </div>
+              </div>
+              <div className="absolute -top-4 -right-4 w-24 h-24 bg-accent/20 rounded-full blur-2xl" />
+              <div className="absolute -bottom-4 -left-4 w-32 h-32 bg-primary/20 rounded-full blur-2xl" />
+            </motion.div>
+          </div>
+        </div>
+      </section>
 
-class Field(Base):
-    __tablename__ = "fields"
-    id = Column(Integer, primary_key=True, index=True)
-    ten_san = Column(String(100), unique=True, nullable=False)
-    loai_san = Column(SQLEnum(FieldType), nullable=False)
-    suc_chua = Column(Integer, nullable=False)
-    gia_tieu_chuan = Column(Numeric(12, 2), nullable=False)
-    gia_cao_diem = Column(Numeric(12, 2), nullable=False)
-    mo_ta = Column(Text)
-    trang_thai = Column(SQLEnum(FieldStatus), nullable=False, default=FieldStatus.HOAT_DONG)
-    ngay_tao = Column(DateTime, default=datetime.utcnow)
+      <section className="py-20 bg-gradient-to-b from-background to-secondary/30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-display font-bold text-foreground mb-4">
+              Vì sao chọn <span className="gradient-text">KICKOFF</span>?
+            </h2>
+            <p className="text-muted-foreground max-w-2xl mx-auto">Trải nghiệm đặt sân hiện đại, nhanh chóng và tiện lợi nhất</p>
+          </motion.div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {FEATURES.map((feature, i) => {
+              const Icon = feature.icon;
+              return (
+                <motion.div key={feature.title} initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4, delay: i * 0.1 }} className="group p-6 bg-card rounded-2xl border border-border card-hover cursor-pointer">
+                  <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300`}>
+                    <Icon className="w-7 h-7 text-white" />
+                  </div>
+                  <h3 className="font-display font-bold text-lg text-foreground mb-2">{feature.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{feature.desc}</p>
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
 
-    bookings = relationship("Booking", back_populates="san")
+      <section className="py-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sidebar via-sidebar to-sidebar/90 p-8 md:p-12 lg:p-16">
+            <div className="absolute inset-0">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-primary/20 rounded-full blur-3xl" />
+              <div className="absolute bottom-0 left-0 w-64 h-64 bg-accent/20 rounded-full blur-3xl" />
+            </div>
+            <div className="relative flex flex-col lg:flex-row items-center justify-between gap-8">
+              <div className="text-center lg:text-left">
+                <h2 className="text-3xl md:text-4xl font-display font-bold text-white mb-4">Sẵn sàng ra sân?</h2>
+                <p className="text-white/70 max-w-lg">Đăng ký ngay để nhận ưu đãi 10% cho lần đặt sân đầu tiên. Chỉ mất 30 giây!</p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Link href="/booking" className="group inline-flex items-center justify-center gap-2 px-8 py-4 bg-white text-sidebar rounded-2xl font-semibold hover:bg-white/90 transition-colors">
+                  <Zap className="w-5 h-5" /><span>Đặt sân ngay</span>
+                  <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </Link>
+                <Link href="/register" className="inline-flex items-center justify-center gap-2 px-8 py-4 border-2 border-white/30 text-white rounded-2xl font-semibold hover:bg-white/10 transition-colors">
+                  Tạo tài khoản
+                </Link>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </section>
 
-
-class Booking(Base):
-    __tablename__ = "bookings"
-    id = Column(Integer, primary_key=True, index=True)
-    ma_dat_san = Column(String(20), unique=True, index=True, nullable=False)
-    san_id = Column(Integer, ForeignKey("fields.id"), nullable=False)
-    khach_hang_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # null = khách vãng lai
-    ten_khach_vang_lai = Column(String(100))  # nếu khách vãng lai
-    sdt_khach_vang_lai = Column(String(15))
-    email_khach_vang_lai = Column(String(120))  # email khách guest để gửi reminder
-    reminder_sent = Column(Boolean, nullable=False, default=False)  # đã gửi reminder chưa
-    ngay_dat = Column(Date, nullable=False)
-    gio_bat_dau = Column(Time, nullable=False)
-    gio_ket_thuc = Column(Time, nullable=False)
-    so_gio = Column(Float, nullable=False)
-    tien_san = Column(Numeric(12, 2), nullable=False)
-    ghi_chu = Column(Text)
-    hinh_thuc_thanh_toan = Column(SQLEnum(PaymentMethod), nullable=False)
-    trang_thai = Column(SQLEnum(BookingStatus), nullable=False, default=BookingStatus.CHO_XAC_NHAN)
-    ly_do_huy = Column(Text)
-    hoan_tien = Column(Boolean, nullable=False, default=False)  # Admin/Staff quyết định có hoàn tiền không
-    nguoi_tao_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # ai tạo booking (NV hay khách)
-    ngay_tao = Column(DateTime, default=datetime.utcnow)
-
-    san = relationship("Field", back_populates="bookings")
-    khach_hang = relationship("User", back_populates="bookings", foreign_keys=[khach_hang_id])
-    booking_services = relationship("BookingService", back_populates="booking", cascade="all, delete-orphan")
-    invoice = relationship("Invoice", back_populates="booking", uselist=False, cascade="all, delete-orphan")
-    feedback = relationship("Feedback", back_populates="booking", uselist=False, cascade="all, delete-orphan")
-
-
-class Service(Base):
-    __tablename__ = "services"
-    id = Column(Integer, primary_key=True, index=True)
-    ten_dich_vu = Column(String(100), nullable=False)
-    don_gia = Column(Numeric(12, 2), nullable=False)
-    don_vi_tinh = Column(String(20), nullable=False)
-    ton_kho = Column(Integer, nullable=False, default=0)
-    la_cho_thue = Column(Boolean, nullable=False, default=False)  # True nếu là đồ thuê (giày, áo) - restock khi xong
-    trang_thai = Column(SQLEnum(ServiceStatus), nullable=False, default=ServiceStatus.HOAT_DONG)
-    ngay_tao = Column(DateTime, default=datetime.utcnow)
-
-    booking_services = relationship("BookingService", back_populates="dich_vu")
-
-
-class BookingService(Base):
-    __tablename__ = "booking_services"
-    id = Column(Integer, primary_key=True, index=True)
-    booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=False)
-    dich_vu_id = Column(Integer, ForeignKey("services.id"), nullable=False)
-    so_luong = Column(Integer, nullable=False, default=1)
-    don_gia = Column(Numeric(12, 2), nullable=False)
-    thanh_tien = Column(Numeric(12, 2), nullable=False)
-
-    booking = relationship("Booking", back_populates="booking_services")
-    dich_vu = relationship("Service", back_populates="booking_services")
-
-
-class Membership(Base):
-    __tablename__ = "memberships"
-    id = Column(Integer, primary_key=True, index=True)
-    khach_hang_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    loai_the = Column(SQLEnum(MembershipType), nullable=False)
-    ngay_bat_dau = Column(Date, nullable=False)
-    ngay_ket_thuc = Column(Date, nullable=False)
-    phi_the = Column(Numeric(12, 2), nullable=False)
-    trang_thai = Column(String(20), default="ACTIVE")  # ACTIVE / EXPIRED
-    ngay_tao = Column(DateTime, default=datetime.utcnow)
-
-    khach_hang = relationship("User", back_populates="memberships")
-
-
-class Invoice(Base):
-    __tablename__ = "invoices"
-    id = Column(Integer, primary_key=True, index=True)
-    ma_hoa_don = Column(String(20), unique=True, index=True, nullable=False)
-    booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=False)
-    tien_san = Column(Numeric(12, 2), nullable=False)
-    tien_dich_vu = Column(Numeric(12, 2), nullable=False, default=0)
-    giam_gia = Column(Numeric(12, 2), nullable=False, default=0)
-    tong_cong = Column(Numeric(12, 2), nullable=False)
-    hinh_thuc_thanh_toan = Column(SQLEnum(PaymentMethod), nullable=False)
-    trang_thai = Column(SQLEnum(PaymentStatus), nullable=False, default=PaymentStatus.CHUA_THANH_TOAN)
-    ngay_xuat = Column(DateTime, default=datetime.utcnow)
-
-    booking = relationship("Booking", back_populates="invoice")
-
-
-class Shift(Base):
-    __tablename__ = "shifts"
-    id = Column(Integer, primary_key=True, index=True)
-    nhan_vien_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    ngay = Column(Date, nullable=False)
-    ca_truc = Column(SQLEnum(ShiftType), nullable=False)
-    san_phu_trach = Column(String(200))  # JSON list của field IDs dạng "1,2,3"
-    ghi_chu = Column(Text)
-    ngay_tao = Column(DateTime, default=datetime.utcnow)
-
-    nhan_vien = relationship("User", back_populates="shifts")
-
-
-class Feedback(Base):
-    __tablename__ = "feedbacks"
-    id = Column(Integer, primary_key=True, index=True)
-    booking_id = Column(Integer, ForeignKey("bookings.id"), unique=True, nullable=False)
-    khach_hang_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    danh_gia_tong = Column(Integer, nullable=False)  # 1-5
-    danh_gia_co_so = Column(Integer)
-    danh_gia_nhan_vien = Column(Integer)
-    danh_gia_dich_vu = Column(Integer)
-    nhan_xet = Column(Text)
-    ngay_tao = Column(DateTime, default=datetime.utcnow)
-
-    booking = relationship("Booking", back_populates="feedback")
-    khach_hang = relationship("User", back_populates="feedbacks")
+      <footer className="border-t border-border py-8 bg-card">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center">
+                <Zap className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <div className="font-display font-bold text-foreground">KICKOFF</div>
+                <div className="text-xs text-muted-foreground">Sân Bóng Đá Online</div>
+              </div>
+            </div>
+            <div className="text-sm text-muted-foreground">© 2024 KICKOFF. Made with ❤️ for football lovers.</div>
+          </div>
+        </div>
+      </footer>
+    </>
+  );
+}

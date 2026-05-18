@@ -1,48 +1,85 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from typing import Optional, List
-from app.core.database import get_db
-from app.core.security import require_roles
-from app.core.config import UserRole, ServiceStatus
-from app.models import Service, User
-from app.schemas import ServiceCreate, ServiceUpdate, ServiceOut
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-router = APIRouter(prefix="/api/services", tags=["Services"])
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("token");
+}
 
+export function setToken(token: string) {
+  if (typeof window !== "undefined") localStorage.setItem("token", token);
+}
 
-@router.get("", response_model=List[ServiceOut])
-def list_services(trang_thai: Optional[ServiceStatus] = None, db: Session = Depends(get_db)):
-    q = db.query(Service)
-    if trang_thai:
-        q = q.filter(Service.trang_thai == trang_thai)
-    return q.order_by(Service.id).all()
+export function clearToken() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+  }
+}
 
+export function getUser(): any {
+  if (typeof window === "undefined") return null;
+  const s = localStorage.getItem("user");
+  return s ? JSON.parse(s) : null;
+}
 
-@router.post("", response_model=ServiceOut)
-def create_service(
-    payload: ServiceCreate,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.ADMIN, UserRole.QUAN_LY)),
-):
-    svc = Service(**payload.model_dump())
-    db.add(svc)
-    db.commit()
-    db.refresh(svc)
-    return svc
+export function setUser(user: any) {
+  if (typeof window !== "undefined") localStorage.setItem("user", JSON.stringify(user));
+}
 
+export async function api(path: string, options: RequestInit = {}): Promise<any> {
+  const token = getToken();
+  const headers: any = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
-@router.put("/{service_id}", response_model=ServiceOut)
-def update_service(
-    service_id: int,
-    payload: ServiceUpdate,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.ADMIN, UserRole.QUAN_LY)),
-):
-    svc = db.query(Service).filter(Service.id == service_id).first()
-    if not svc:
-        raise HTTPException(404, "Không tìm thấy dịch vụ")
-    for k, v in payload.model_dump(exclude_unset=True).items():
-        setattr(svc, k, v)
-    db.commit()
-    db.refresh(svc)
-    return svc
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  } catch (err: any) {
+    throw new Error(
+      `Không kết nối được tới backend (${API_URL}). Kiểm tra: 1) uvicorn đã chạy chưa? 2) cổng 8000 đúng chưa?`
+    );
+  }
+  const ct = res.headers.get("content-type") || "";
+  const body = ct.includes("application/json") ? await res.json() : await res.text();
+
+  if (!res.ok) {
+    const detail =
+      typeof body === "object" && body?.detail !== undefined ? body.detail : null;
+    const msg =
+      typeof detail === "string"
+        ? detail
+        : detail && typeof detail === "object" && detail.message
+          ? detail.message
+          : detail
+            ? JSON.stringify(detail)
+            : `Lỗi ${res.status}`;
+    const err: any = new Error(msg);
+    err.status = res.status;
+    err.detail = detail;
+    throw err;
+  }
+  return body;
+}
+
+export const apiGet = (path: string) => api(path);
+export const apiPost = (path: string, data?: any) =>
+  api(path, { method: "POST", body: data ? JSON.stringify(data) : undefined });
+export const apiPut = (path: string, data: any) =>
+  api(path, { method: "PUT", body: JSON.stringify(data) });
+export const apiDelete = (path: string) => api(path, { method: "DELETE" });
+
+export function formatVND(n: number | string): string {
+  const num = typeof n === "string" ? parseFloat(n) : n;
+  return new Intl.NumberFormat("vi-VN").format(Math.round(num)) + "đ";
+}
+
+export function formatDate(s: string): string {
+  return new Date(s).toLocaleDateString("vi-VN");
+}
+
+export function formatDateTime(s: string): string {
+  return new Date(s).toLocaleString("vi-VN");
+}

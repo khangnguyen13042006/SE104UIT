@@ -1,210 +1,190 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { apiGet, formatDateTime } from "@/lib/api";
-import { Star, Loader2, AlertTriangle, MessageSquare, TrendingUp, Filter, ArrowUpDown } from "lucide-react";
+import { apiGet, apiPost, apiPut, formatVND } from "@/lib/api";
+import { Plus, Edit2, X, Loader2, Recycle, Package } from "lucide-react";
 
-type SortOption = "newest" | "oldest" | "highest" | "lowest";
-
-export default function FeedbacksAdmin() {
+export default function ServicesAdmin() {
   const [list, setList] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
-  const [starFilter, setStarFilter] = useState<string>("");  // "", "1", "2", "3", "4", "5"
-  const [sort, setSort] = useState<SortOption>("newest");
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<any>(null);
+  const [creating, setCreating] = useState(false);
 
   async function load() {
     setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (starFilter) {
-        params.set("min_star", starFilter);
-        params.set("max_star", starFilter);
-      }
-      const [items, s] = await Promise.all([
-        apiGet(`/api/feedbacks?${params}`),
-        apiGet("/api/feedbacks/stats").catch(() => null),
-      ]);
-      setList(items);
-      setStats(s);
-    } finally {
-      setLoading(false);
-    }
+    try { setList(await apiGet("/api/services")); }
+    finally { setLoading(false); }
   }
-  useEffect(() => { load(); }, [starFilter]);
-
-  // Client-side sort
-  const sorted = useMemo(() => {
-    const arr = [...list];
-    switch (sort) {
-      case "newest": arr.sort((a, b) => new Date(b.ngay_tao).getTime() - new Date(a.ngay_tao).getTime()); break;
-      case "oldest": arr.sort((a, b) => new Date(a.ngay_tao).getTime() - new Date(b.ngay_tao).getTime()); break;
-      case "highest": arr.sort((a, b) => b.danh_gia_tong - a.danh_gia_tong || new Date(b.ngay_tao).getTime() - new Date(a.ngay_tao).getTime()); break;
-      case "lowest": arr.sort((a, b) => a.danh_gia_tong - b.danh_gia_tong || new Date(b.ngay_tao).getTime() - new Date(a.ngay_tao).getTime()); break;
-    }
-    return arr;
-  }, [list, sort]);
+  useEffect(() => { load(); }, []);
 
   return (
     <div className="space-y-6">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-3 h-3 bg-primary rounded-full pulse-dot" />
-          <span className="text-sm font-medium text-primary uppercase tracking-wider">Phản hồi</span>
-        </div>
-        <h1 className="text-3xl md:text-4xl font-display font-bold text-foreground">Đánh giá khách hàng</h1>
-        <p className="text-muted-foreground text-sm mt-1">Theo dõi feedback để cải thiện dịch vụ</p>
-      </motion.div>
-
-      {/* Stats */}
-      {stats && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-          className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard icon={<MessageSquare className="w-5 h-5" />} label="Tổng đánh giá" value={stats.tong_so} color="from-primary to-primary/60" />
-          <StatCard icon={<Star className="w-5 h-5" />} label="Điểm trung bình" value={`${stats.trung_binh}★`} color="from-accent to-accent/60" />
-          <StatCard icon={<TrendingUp className="w-5 h-5" />} label="Hài lòng (≥4★)" value={stats.hai_long || 0} color="from-chart-3 to-chart-3/60" />
-          <StatCard icon={<AlertTriangle className="w-5 h-5" />} label="Cảnh báo (<3★)" value={stats.canh_bao} color="from-destructive to-destructive/60" />
-        </motion.div>
-      )}
-
-      {/* Filters */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-        className="bg-card rounded-3xl border border-border p-5 space-y-4">
-        {/* Star filter */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            <Filter className="w-4 h-4 text-muted-foreground" />
-            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Lọc theo số sao</span>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-3 h-3 bg-primary rounded-full pulse-dot" />
+            <span className="text-sm font-medium text-primary uppercase tracking-wider">Sản phẩm</span>
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <FilterChip active={!starFilter} onClick={() => setStarFilter("")}>
-              Tất cả
-            </FilterChip>
-            {[5, 4, 3, 2, 1].map((n) => (
-              <FilterChip key={n} active={starFilter === String(n)} onClick={() => setStarFilter(String(n))}>
-                <span className="flex items-center gap-1">
-                  {n}<Star className="w-3 h-3 fill-current" />
-                </span>
-              </FilterChip>
-            ))}
-          </div>
+          <h1 className="text-3xl md:text-4xl font-display font-bold text-foreground">Dịch vụ</h1>
+          <p className="text-muted-foreground text-sm mt-1">Đồ thuê sẽ tự restock khi booking hoàn thành</p>
         </div>
-
-        {/* Sort */}
-        <div className="pt-3 border-t border-border">
-          <div className="flex items-center gap-2 mb-2">
-            <ArrowUpDown className="w-4 h-4 text-muted-foreground" />
-            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Sắp xếp</span>
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            <FilterChip active={sort === "newest"} onClick={() => setSort("newest")}>Mới nhất</FilterChip>
-            <FilterChip active={sort === "oldest"} onClick={() => setSort("oldest")}>Cũ nhất</FilterChip>
-            <FilterChip active={sort === "highest"} onClick={() => setSort("highest")}>Điểm cao nhất</FilterChip>
-            <FilterChip active={sort === "lowest"} onClick={() => setSort("lowest")}>Điểm thấp nhất</FilterChip>
-          </div>
-        </div>
-
-        <div className="pt-3 border-t border-border text-sm text-muted-foreground">
-          Hiển thị <strong className="text-foreground">{sorted.length}</strong> đánh giá
-          {starFilter && ` với ${starFilter}★`}
-        </div>
+        <button onClick={() => setCreating(true)}
+          className="px-5 py-3 bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl text-sm font-semibold flex items-center gap-2 shadow-lg shadow-primary/25 transition-all">
+          <Plus className="w-4 h-4" /> Thêm dịch vụ
+        </button>
       </motion.div>
 
-      {/* List */}
       {loading ? (
         <div className="p-16 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" /></div>
-      ) : sorted.length === 0 ? (
+      ) : list.length === 0 ? (
         <div className="bg-card rounded-3xl p-16 text-center border border-border">
-          <MessageSquare className="w-16 h-16 mx-auto mb-4 text-muted-foreground/30" />
-          <p className="text-muted-foreground">Không có đánh giá nào{starFilter ? ` với ${starFilter}★` : ""}</p>
+          <Package className="w-16 h-16 mx-auto mb-4 text-muted-foreground/30" />
+          <p className="text-muted-foreground font-medium mb-4">Chưa có dịch vụ nào</p>
+          <button onClick={() => setCreating(true)}
+            className="px-5 py-3 bg-primary text-primary-foreground rounded-2xl text-sm font-semibold inline-flex items-center gap-2">
+            <Plus className="w-4 h-4" /> Thêm dịch vụ đầu tiên
+          </button>
         </div>
       ) : (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="space-y-3">
-          {sorted.map((f, i) => <FeedbackItem key={f.id} f={f} delay={i * 0.03} />)}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-card rounded-3xl border border-border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-secondary/50">
+                <tr className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  <th className="text-left p-4">Tên dịch vụ</th>
+                  <th className="text-center p-4">Loại</th>
+                  <th className="text-right p-4">Đơn giá</th>
+                  <th className="text-center p-4">Đơn vị</th>
+                  <th className="text-right p-4">Tồn kho</th>
+                  <th className="text-center p-4">Trạng thái</th>
+                  <th className="p-4"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {list.map((s) => (
+                  <tr key={s.id} className="hover:bg-secondary/30 transition-colors">
+                    <td className="p-4 font-semibold text-foreground">{s.ten_dich_vu}</td>
+                    <td className="p-4 text-center">
+                      {s.la_cho_thue ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-chart-3/10 text-chart-3 border border-chart-3/20">
+                          <Recycle className="w-3 h-3" /> Đồ thuê
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Tiêu hao</span>
+                      )}
+                    </td>
+                    <td className="p-4 text-right font-semibold text-foreground">{formatVND(s.don_gia)}</td>
+                    <td className="p-4 text-center text-muted-foreground">{s.don_vi_tinh}</td>
+                    <td className={`p-4 text-right font-bold ${s.ton_kho < 5 ? "text-destructive" : "text-foreground"}`}>{s.ton_kho}</td>
+                    <td className="p-4 text-center">
+                      <span className={`inline-flex text-xs font-bold px-2 py-1 rounded-full ${
+                        s.trang_thai === "HOAT_DONG" ? "bg-primary/10 text-primary border border-primary/20" : "bg-muted text-muted-foreground"
+                      }`}>{s.trang_thai === "HOAT_DONG" ? "Hoạt động" : "Ngừng KD"}</span>
+                    </td>
+                    <td className="p-4 text-right">
+                      <button onClick={() => setEditing(s)} className="p-2 hover:bg-secondary rounded-xl transition-colors">
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </motion.div>
       )}
-    </div>
-  );
-}
 
-function FilterChip({ active, onClick, children }: any) {
-  return (
-    <button onClick={onClick}
-      className={`px-4 py-2 rounded-2xl text-sm font-semibold transition-all ${
-        active
-          ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
-          : "bg-secondary text-foreground hover:bg-secondary/70"
-      }`}>
-      {children}
-    </button>
-  );
-}
-
-function StatCard({ icon, label, value, color }: any) {
-  return (
-    <div className="bg-card rounded-3xl border border-border p-5">
-      <div className={`w-10 h-10 rounded-2xl bg-gradient-to-br ${color} flex items-center justify-center mb-3 text-white`}>
-        {icon}
-      </div>
-      <div className="text-xs text-muted-foreground mb-1">{label}</div>
-      <div className="text-2xl font-display font-bold text-foreground">{value}</div>
-    </div>
-  );
-}
-
-function FeedbackItem({ f, delay }: { f: any; delay: number }) {
-  const urgent = f.danh_gia_tong <= 2;
-  return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay }}
-      className={`bg-card rounded-3xl border p-5 hover:shadow-md transition-all ${
-        urgent ? "border-destructive/30" : "border-border"
-      }`}>
-      <div className="flex items-start justify-between mb-3 gap-3 flex-wrap">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 ${
-            urgent ? "bg-gradient-to-br from-destructive to-destructive/70" : "bg-gradient-to-br from-primary to-accent"
-          }`}>
-            {(f.ten_khach || "K").charAt(0).toUpperCase()}
-          </div>
-          <div className="min-w-0">
-            <div className="font-bold text-foreground truncate">{f.ten_khach || "Khách"}</div>
-            <div className="text-xs text-muted-foreground truncate">
-              {f.ten_san} · {formatDateTime(f.ngay_tao)}
-            </div>
-          </div>
-          {urgent && (
-            <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-destructive/10 text-destructive">
-              <AlertTriangle className="w-3 h-3" /> Khẩn
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-0.5">
-          {[1, 2, 3, 4, 5].map((n) => (
-            <Star key={n} className={`w-4 h-4 ${n <= f.danh_gia_tong ? "text-accent fill-accent" : "text-muted-foreground/20"}`} />
-          ))}
-        </div>
-      </div>
-
-      {f.nhan_xet && (
-        <p className="text-sm text-foreground mb-3 leading-relaxed italic bg-secondary/40 rounded-xl p-3">"{f.nhan_xet}"</p>
+      {(editing || creating) && (
+        <ServiceModal svc={editing} onClose={() => { setEditing(null); setCreating(false); }}
+          onSuccess={() => { setEditing(null); setCreating(false); load(); }} />
       )}
+    </div>
+  );
+}
 
-      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-        <Sub label="Cơ sở" value={f.danh_gia_co_so} />
-        <Sub label="Nhân viên" value={f.danh_gia_nhan_vien} />
-        <Sub label="Dịch vụ" value={f.danh_gia_dich_vu} />
-      </div>
+function ServiceModal({ svc, onClose, onSuccess }: any) {
+  const [form, setForm] = useState({
+    ten_dich_vu: svc?.ten_dich_vu || "",
+    don_gia: svc?.don_gia || 10000,
+    don_vi_tinh: svc?.don_vi_tinh || "Cái",
+    ton_kho: svc?.ton_kho || 10,
+    la_cho_thue: svc?.la_cho_thue ?? false,
+    trang_thai: svc?.trang_thai || "HOAT_DONG",
+  });
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    if (!form.ten_dich_vu.trim()) { setErr("Vui lòng nhập tên dịch vụ"); return; }
+    setLoading(true); setErr("");
+    try {
+      if (svc) await apiPut(`/api/services/${svc.id}`, form);
+      else await apiPost("/api/services", form);
+      onSuccess();
+    } catch (e: any) { setErr(e.message); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-card rounded-3xl w-full max-w-md my-8 shadow-2xl border border-border">
+        <div className="flex items-center justify-between p-5 border-b border-border">
+          <h3 className="text-2xl font-display font-bold">{svc ? "Sửa dịch vụ" : "Thêm dịch vụ"}</h3>
+          <button onClick={onClose} className="p-2 hover:bg-secondary rounded-xl"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          <Input label="Tên dịch vụ *" value={form.ten_dich_vu} onChange={(v: string) => setForm({ ...form, ten_dich_vu: v })} />
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Đơn giá" type="number" value={form.don_gia} onChange={(v: string) => setForm({ ...form, don_gia: parseFloat(v) || 0 })} />
+            <Input label="Đơn vị" value={form.don_vi_tinh} onChange={(v: string) => setForm({ ...form, don_vi_tinh: v })} />
+          </div>
+          <Input label="Tồn kho" type="number" value={form.ton_kho} onChange={(v: string) => setForm({ ...form, ton_kho: parseInt(v) || 0 })} />
+
+          <label className="flex items-start gap-3 p-4 rounded-xl border border-border cursor-pointer hover:bg-secondary/50 transition-colors">
+            <input type="checkbox" checked={form.la_cho_thue}
+              onChange={(e) => setForm({ ...form, la_cho_thue: e.target.checked })}
+              className="w-4 h-4 mt-0.5 accent-primary" />
+            <div className="flex-1">
+              <div className="text-sm font-semibold flex items-center gap-1.5">
+                <Recycle className="w-4 h-4 text-chart-3" /> Đây là đồ cho thuê (auto-restock)
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                VD: Giày, áo tập. Khi booking hoàn thành, tồn kho tự cộng lại.
+              </div>
+            </div>
+          </label>
+
+          <label className="block">
+            <span className="text-sm font-semibold mb-1.5 block">Trạng thái</span>
+            <select value={form.trang_thai} onChange={(e) => setForm({ ...form, trang_thai: e.target.value })}
+              className="w-full px-3 py-2.5 rounded-xl border border-input bg-background focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none">
+              <option value="HOAT_DONG">Hoạt động</option>
+              <option value="NGUNG_KINH_DOANH">Ngừng kinh doanh</option>
+            </select>
+          </label>
+
+          {err && <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm">{err}</div>}
+
+          <div className="flex gap-2 pt-2">
+            <button type="button" onClick={onClose} disabled={loading}
+              className="flex-1 py-3 rounded-2xl border border-border hover:bg-secondary font-semibold disabled:opacity-50">Hủy</button>
+            <button type="button" onClick={submit} disabled={loading}
+              className="flex-1 py-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-lg shadow-primary/25 disabled:opacity-50">
+              {loading ? "Đang lưu..." : "Lưu"}
+            </button>
+          </div>
+        </div>
+      </motion.div>
     </motion.div>
   );
 }
 
-function Sub({ label, value }: any) {
+function Input({ label, value, onChange, type = "text" }: any) {
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-secondary">
-      {label}:{" "}
-      <span className="font-bold text-foreground inline-flex items-center gap-0.5">
-        {value}/5 <Star className="w-3 h-3 fill-accent text-accent" />
-      </span>
-    </span>
+    <label className="block">
+      <span className="text-sm font-semibold mb-1.5 block">{label}</span>
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)}
+        className="w-full px-3 py-2.5 rounded-xl border border-input bg-background focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all" />
+    </label>
   );
 }
