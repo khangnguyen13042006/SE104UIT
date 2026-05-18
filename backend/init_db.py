@@ -1,73 +1,85 @@
-#!/usr/bin/env python
-"""
-Khởi tạo schema database (tạo bảng) — chạy 1 lần khi setup MySQL/SQLite mới.
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from typing import Optional, List
+from app.core.database import get_db
+from app.core.security import require_roles, hash_password
+from app.core.config import UserRole, UserStatus
+from app.models import User
+from app.schemas import UserOut, UserUpdate, UserRegister
 
-Usage:
-    # SQLite (default):
-    python init_db.py
-
-    # MySQL:
-    export DATABASE_URL="mysql+pymysql://user:pass@host:port/san_bong"
-    python init_db.py
-
-Script này CHỈ tạo bảng (CREATE TABLE IF NOT EXISTS). 
-Để seed data demo, chạy `python seed.py` sau đó.
-"""
-import sys
-from app.core.database import engine, get_db_info, Base
-# Import tất cả models để Base.metadata biết về chúng
-from app.models import (
-    User, Field, Booking, BookingService,
-    Service, Membership, Invoice, Shift, Feedback
-)
+router = APIRouter(prefix="/api/users", tags=["Users"])
 
 
-def main():
-    info = get_db_info()
-    print(f"📊 Database type: {info['kind']}")
-    if not info['is_sqlite']:
-        print(f"   Host: {info['host']}:{info['port']}")
-        print(f"   Name: {info['database']}")
-
-    # Verify connection
-    try:
-        with engine.connect() as conn:
-            print("✅ Kết nối database thành công")
-    except Exception as e:
-        print(f"❌ Không kết nối được database: {e}")
-        if info['is_mssql']:
-            print("\n💡 Azure SQL / SQL Server checklist:")
-            print("   1. ODBC Driver 18 đã cài? https://aka.ms/odbcdriver")
-            print("   2. Firewall Azure đã thêm IP của bạn? Portal → SQL Server → Networking")
-            print("   3. Connection string format:")
-            print("      mssql+pyodbc://USER:PWD@SERVER.database.windows.net:1433/DB?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes")
-            print("   4. Password URL-encoded? (@→%40, !→%21, #→%23)")
-            print("   5. Chạy `python test_azure_connection.py` để debug chi tiết")
-        elif info['is_mysql']:
-            print("\n💡 MySQL checklist:")
-            print("   1. MySQL server đang chạy?")
-            print("   2. Database đã được tạo? CREATE DATABASE san_bong CHARACTER SET utf8mb4;")
-            print("   3. User/password đúng?")
-            print("   4. DATABASE_URL trong .env hoặc env var?")
-        sys.exit(1)
-
-    # Create all tables
-    print("\n🔨 Tạo tables...")
-    Base.metadata.create_all(bind=engine)
-
-    # List tables
-    from sqlalchemy import inspect
-    insp = inspect(engine)
-    tables = insp.get_table_names()
-    print(f"✅ Đã tạo {len(tables)} tables:")
-    for t in sorted(tables):
-        col_count = len(insp.get_columns(t))
-        print(f"   • {t} ({col_count} columns)")
-
-    print("\n💡 Bước tiếp theo:")
-    print("   python seed.py     # Seed dữ liệu demo")
-    print("   uvicorn app.main:app --reload   # Khởi động API")
+@router.get("", response_model=List[UserOut])
+def list_users(
+    vai_tro: Optional[UserRole] = None,
+    keyword: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.ADMIN, UserRole.QUAN_LY)),
+):
+    q = db.query(User)
+    if vai_tro:
+        q = q.filter(User.vai_tro == vai_tro)
+    if keyword:
+        like = f"%{keyword}%"
+        q = q.filter((User.ho_ten.ilike(like)) | (User.email.ilike(like)) | (User.sdt.ilike(like)))
+    return q.order_by(User.id.desc()).all()
 
 
-if __name__ == "__main__":
-    main()
+@router.post("", response_model=UserOut)
+def create_user(
+    payload: UserRegister,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.ADMIN)),
+):
+    if db.query(User).filter(User.email == payload.email).first():
+        raise HTTPException(400, "Email đã được sử dụng")
+    if db.query(User).filter(User.sdt == payload.sdt).first():
+        raise HTTPException(400, "SĐT đã được sử dụng")
+    user = User(
+        ho_ten=payload.ho_ten,
+        email=payload.email,
+        sdt=payload.sdt,
+        mat_khau_hash=hash_password(payload.mat_khau),
+        vai_tro=payload.vai_tro or UserRole.KHACH_HANG,
+        trang_thai=UserStatus.HOAT_DONG,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.get("/{user_id}", response_model=UserOut)
+def get_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles(UserRole.ADMIN, UserRole.QUAN_LY))):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "Không tìm thấy tài khoản")
+    return user
+
+
+@router.put("/{user_id}", response_model=UserOut)
+def update_user(
+    user_id: int,
+    payload: UserUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.ADMIN)),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "Không tìm thấy tài khoản")
+
+    # Không cho vô hiệu hoá admin cuối cùng
+    if payload.trang_thai == UserStatus.VO_HIEU_HOA and user.vai_tro == UserRole.ADMIN:
+        active_admins = db.query(User).filter(
+            User.vai_tro == UserRole.ADMIN,
+            User.trang_thai == UserStatus.HOAT_DONG,
+        ).count()
+        if active_admins <= 1:
+            raise HTTPException(400, "Không thể vô hiệu hoá Admin duy nhất còn hoạt động")
+
+    for k, v in payload.model_dump(exclude_unset=True).items():
+        setattr(user, k, v)
+    db.commit()
+    db.refresh(user)
+    return user
