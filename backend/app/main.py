@@ -41,13 +41,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+origins = [
+    "https://se104uit.vercel.app", # Link web Vercel của bạn
+    "http://localhost:3000",       # Để test máy local
+]
+
 app.add_middleware(
     CORSMiddleware,
-    # Thay vì dùng "*", hãy liệt kê chính xác các "người quen"
-    allow_origins=[
-        "https://se104uit.vercel.app", # Link web của bạn trên Vercel
-        "http://localhost:3000",       # Để bạn vẫn test được dưới máy local
-    ],
+    allow_origins=origins,         # Dùng danh sách origins cụ thể này
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
