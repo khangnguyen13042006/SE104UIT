@@ -40,7 +40,6 @@ elif is_mssql:
         "pool_recycle": 1800,      # Azure idle timeout ~30 min, recycle trước đó
         "pool_size": 5,
         "max_overflow": 10,
-        "fast_executemany": True,  # tăng tốc bulk insert
     })
 else:
     # MySQL
