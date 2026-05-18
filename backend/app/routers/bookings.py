@@ -546,10 +546,14 @@ def add_booking_service(
         existing.so_luong += so_luong
         existing.thanh_tien += thanh_tien
     else:
-        db.add(BookingService(
-            booking_id=b.id, dich_vu_id=dich_vu_id,
-            so_luong=so_luong, don_gia=svc.don_gia, thanh_tien=thanh_tien,
-        ))
+        # Tạo object mới và gắn trực tiếp vào danh sách của Booking b
+        new_item = BookingService(
+            dich_vu_id=dich_vu_id,
+            so_luong=so_luong,
+            don_gia=svc.don_gia,
+            thanh_tien=thanh_tien
+        )
+        b.booking_services.append(new_item)
     svc.ton_kho -= so_luong
 
     # Update invoice tong_cong
@@ -560,6 +564,7 @@ def add_booking_service(
     note = f"[+DV {datetime.now().strftime('%H:%M %d/%m')}] {svc.ten_dich_vu} ×{so_luong} (+{thanh_tien:.0f}đ) bởi {user.ho_ten}"
     b.ghi_chu = (b.ghi_chu + "\n" + note) if b.ghi_chu else note
     db.commit()
+    db.expire(b)
     db.refresh(b)
     return _booking_to_out(b)
 
