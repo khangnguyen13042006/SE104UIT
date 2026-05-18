@@ -8,8 +8,7 @@ Database configuration. Hỗ trợ 3 loại database:
     DATABASE_URL=mysql+pymysql://user:password@host:port/san_bong
 
 3) Azure SQL Database / SQL Server:
-    Cần Microsoft ODBC Driver 18 cài sẵn trên máy
-    DATABASE_URL=mssql+pyodbc://user:password@server.database.windows.net:1433/san_bong?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no
+    DATABASE_URL=mssql+pymssql://user:password@server.database.windows.net:1433/san_bong
 """
 import os
 from sqlalchemy import create_engine
@@ -40,7 +39,7 @@ elif is_mssql:
         "pool_recycle": 1800,      # Azure idle timeout ~30 min, recycle trước đó
         "pool_size": 5,
         "max_overflow": 10,
-        "fast_executemany": True,  # tăng tốc bulk insert
+        # ĐÃ XÓA fast_executemany VÌ PYMSSQL KHÔNG HỖ TRỢ
     })
 else:
     # MySQL
