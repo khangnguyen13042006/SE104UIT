@@ -12,4 +12,4 @@ python-dotenv==1.0.1
 pymysql==1.1.1
 cryptography==43.0.3
 # Azure SQL / SQL Server driver (cần Microsoft ODBC Driver 18 cài sẵn trên máy)
-pyodbc==5.2.0
+pymssql==2.3.0
