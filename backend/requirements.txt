@@ -1,0 +1,15 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+sqlalchemy==2.0.36
+pydantic==2.9.2
+pydantic-settings==2.6.0
+python-jose[cryptography]==3.3.0
+bcrypt==4.2.0
+python-multipart==0.0.12
+email-validator==2.2.0
+python-dotenv==1.0.1
+# MySQL driver
+pymysql==1.1.1
+cryptography==43.0.3
+# Azure SQL / SQL Server driver (cần Microsoft ODBC Driver 18 cài sẵn trên máy)
+pyodbc==5.2.0
