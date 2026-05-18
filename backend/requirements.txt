@@ -8,8 +8,7 @@ bcrypt==4.2.0
 python-multipart==0.0.12
 email-validator==2.2.0
 python-dotenv==1.0.1
-# MySQL driver
 pymysql==1.1.1
 cryptography==43.0.3
-# Azure SQL / SQL Server driver (cần Microsoft ODBC Driver 18 cài sẵn trên máy)
-pyodbc==5.2.0
+pymssql==2.3.0
+python-dateutil==2.9.0.post0
