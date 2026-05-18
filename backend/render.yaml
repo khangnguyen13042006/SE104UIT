@@ -1,0 +1,32 @@
+# Render Blueprint — Sân Bóng UIT Backend
+# Deploy: https://render.com/docs/blueprint-spec
+#
+# Cách dùng:
+#   1. Push code lên GitHub
+#   2. Vào render.com → New → Blueprint → Connect repo
+#   3. Render tự đọc file này và tạo service
+#   4. Vào service → Environment → add DATABASE_URL (Azure SQL connection string)
+
+services:
+  - type: web
+    name: sanbong-api
+    runtime: python
+    plan: free
+    region: singapore  # hoặc oregon, frankfurt, ohio
+    rootDir: backend
+    buildCommand: |
+      apt-get update && apt-get install -y curl gnupg2 unixodbc unixodbc-dev &&
+      curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - &&
+      curl https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list &&
+      apt-get update &&
+      ACCEPT_EULA=Y apt-get install -y msodbcsql18 &&
+      pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ALLOWED_ORIGINS
+        value: https://se104uit.vercel.app
+      # DATABASE_URL phải set thủ công trong Render dashboard (chứa secret)
+      - key: DATABASE_URL
+        sync: false
