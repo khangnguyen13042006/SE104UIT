@@ -49,22 +49,24 @@ def calculate_field_price(field: Field, start: time, end: time) -> Decimal:
     return total.quantize(Decimal("1"))
 
 
-def has_booking_conflict(
-    db: Session, san_id: int, ngay: date, gio_bat_dau: time,
-    gio_ket_thuc: time, exclude_booking_id: Optional[int] = None
-) -> bool:
-    """Kiểm tra xung đột lịch (overlap)"""
-    q = db.query(Booking).filter(
+def has_booking_conflict(db, san_id, ngay_dat, gio_bat_dau, gio_ket_thuc, exclude_booking_id=None):
+    from app.models import Booking
+    from app.core.config import BookingStatus
+
+    query = db.query(Booking).filter(
         Booking.san_id == san_id,
-        Booking.ngay_dat == ngay,
+        Booking.ngay_dat == ngay_dat,
         Booking.trang_thai != BookingStatus.HUY,
-        # overlap: existing.start < new.end AND existing.end > new.start
         Booking.gio_bat_dau < gio_ket_thuc,
-        Booking.gio_ket_thuc > gio_bat_dau,
+        Booking.gio_ket_thuc > gio_bat_dau
     )
+
     if exclude_booking_id:
-        q = q.filter(Booking.id != exclude_booking_id)
-    return db.query(q.exists()).scalar()
+        query = query.filter(Booking.id != exclude_booking_id)
+
+    # Dùng .first() thay cho .exists() để tương thích SQL Server
+    conflict = query.first()
+    return conflict is not None
 
 
 def get_active_membership(db: Session, user_id: int) -> Optional[Membership]:
