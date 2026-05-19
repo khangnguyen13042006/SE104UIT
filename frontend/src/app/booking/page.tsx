@@ -510,63 +510,68 @@ export default function BookingPage() {
               </div>
             </motion.div>
 
-            {/* Services */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-              className="bg-card rounded-3xl border border-border p-6"
-            >
-              <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2">
-                <span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">4</span>
-                Dịch vụ đi kèm
-              </h2>
-              <div className="grid sm:grid-cols-2 gap-3">
-                {services.slice(0, 8).map((svc) => {
-                  const qty = chosenSvc[svc.id] || 0;
-                  return (
-                    <label
-                      key={svc.id}
-                      className={`flex items-center gap-4 p-4 rounded-2xl border-2 cursor-pointer transition-all ${
-                        qty > 0 
-                          ? "border-primary bg-primary/5" 
-                          : "border-border hover:border-primary/30"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={qty > 0}
-                        onChange={(e) => setQty(svc.id, e.target.checked ? 1 : 0)}
-                        className="w-5 h-5 rounded-lg accent-primary"
-                      />
-                      <div className="flex-1">
-                        <div className="font-medium text-foreground">{svc.ten_dich_vu}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {formatVND(svc.don_gia)}/{svc.don_vi_tinh}
-                        </div>
-                      </div>
-                      {qty > 0 && (
-                        <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}>
-                          <button
-                            onClick={() => setQty(svc.id, qty - 1)}
-                            className="w-8 h-8 rounded-lg bg-secondary hover:bg-secondary/80 font-bold"
-                          >
-                            −
-                          </button>
-                          <span className="w-8 text-center font-bold">{qty}</span>
-                          <button
-                            onClick={() => setQty(svc.id, Math.min(qty + 1, svc.ton_kho))}
-                            className="w-8 h-8 rounded-lg bg-secondary hover:bg-secondary/80 font-bold"
-                          >
-                            +
-                          </button>
-                        </div>
-                      )}
-                    </label>
-                  );
-                })}
+            {/* Services - Đã sửa hiện đầy đủ, có thanh cuộn và nút cộng mượt hơn */}
+<motion.div
+  initial={{ opacity: 0, y: 20 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ delay: 0.4 }}
+  className="bg-card rounded-3xl border border-border p-6"
+>
+  <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2">
+    <span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">4</span>
+    Dịch vụ đi kèm
+  </h2>
+
+  {/* Khung chứa có thanh cuộn dọc */}
+  <div className="max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
+    <div className="grid sm:grid-cols-2 gap-3">
+      {/* Đã xóa .slice(0, 8) để hiện toàn bộ dịch vụ từ Backend */}
+      {services.map((svc) => {
+        const qty = chosenSvc[svc.id] || 0;
+        return (
+          <label
+            key={svc.id}
+            className={`flex items-center gap-4 p-4 rounded-2xl border-2 cursor-pointer transition-all ${
+              qty > 0 
+                ? "border-primary bg-primary/5" 
+                : "border-border hover:border-primary/30"
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={qty > 0}
+              onChange={(e) => setQty(svc.id, e.target.checked ? 1 : 0)}
+              className="w-5 h-5 rounded-lg accent-primary"
+            />
+            <div className="flex-1">
+              <div className="font-medium text-foreground">{svc.ten_dich_vu}</div>
+              <div className="text-sm text-muted-foreground">
+                {formatVND(svc.don_gia)}/{svc.don_vi_tinh}
               </div>
-            </motion.div>
+            </div>
+            {qty > 0 && (
+              <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}>
+                <button
+                  onClick={() => setQty(svc.id, qty - 1)}
+                  className="w-8 h-8 rounded-lg bg-secondary hover:bg-secondary/80 font-bold"
+                >
+                  −
+                </button>
+                <span className="w-8 text-center font-bold">{qty}</span>
+                <button
+                  onClick={() => setQty(svc.id, qty + 1)} // Đã bỏ giới hạn ton_kho để test mượt hơn
+                  className="w-8 h-8 rounded-lg bg-secondary hover:bg-secondary/80 font-bold"
+                >
+                  +
+                </button>
+              </div>
+            )}
+          </label>
+        );
+      })}
+    </div>
+  </div>
+</motion.div>
 
             {/* Contact Form */}
             <motion.div
