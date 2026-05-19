@@ -76,9 +76,10 @@
 }
 
 @theme inline {
-  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
-  --font-mono: 'Geist Mono', 'Geist Mono Fallback', ui-monospace, monospace;
-  --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --font-sans: "Times New Roman", Times, serif;
+  --font-mono: "Times New Roman", Times, serif;
+  --font-display: "Times New Roman", Times, serif;
+  
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -118,24 +119,16 @@
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
+  /* Ép font cho tất cả các thẻ và cả các pseudo-elements */
+  *, ::before, ::after {
+    font-family: "Times New Roman", Times, serif !important;
   }
-  html {
-    /* Fix mobile scroll bounce showing white */
-    background: var(--background);
-    overscroll-behavior-y: none;
-  }
+
   body {
     @apply bg-background text-foreground;
-    /* Prevent rubber-band white flash on iOS */
+    font-family: "Times New Roman", Times, serif !important;
     overscroll-behavior-y: none;
     min-height: 100vh;
-  }
-  /* Ensure html and body fill viewport */
-  html, body {
-    margin: 0;
-    padding: 0;
   }
 }
 
