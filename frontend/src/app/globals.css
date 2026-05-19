@@ -207,3 +207,8 @@
 .card-hover:hover {
   @apply -translate-y-1 shadow-xl;
 }
+@layer base {
+  html, body, h1, h2, h3, h4, h5, h6, span, button, input, textarea, select {
+    font-family: "Times New Roman", Times, serif !important;
+  }
+}
