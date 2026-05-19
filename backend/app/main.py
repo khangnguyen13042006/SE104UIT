@@ -57,6 +57,7 @@ app = FastAPI(
 # Đọc danh sách origins từ env var ALLOWED_ORIGINS (comma-separated)
 # Default bao gồm: Vercel production + localhost dev
 DEFAULT_ORIGINS = [
+    "datsan.se104uit.com",
     "https://se104uit.vercel.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
