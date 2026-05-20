@@ -28,12 +28,11 @@ export default function BookingsAdmin() {
   const [cancelTarget, setCancelTarget] = useState<any>(null);
   const [serviceTarget, setServiceTarget] = useState<any>(null);
 
-  // KHANG: Hàm dọn dẹp hệ thống tự động gọi API dọn dẹp ở Backend
+  // Gọi Backend dọn dẹp đơn quá hạn 60p và hoàn thành đơn qua giờ
   async function runAutoClean() {
     try {
-      // Gọi API để Backend quét hủy đơn quá 60p và hoàn thành đơn qua giờ
       await apiPost('/api/bookings/run-auto-tasks');
-      console.log("[AUTO-CLEAN] Hệ thống đã được dọn dẹp tự động.");
+      console.log("[AUTO-CLEAN] Hệ thống đã dọn dẹp xong.");
     } catch (e) {
       console.error("[AUTO-CLEAN ERROR]", e);
     }
@@ -42,7 +41,7 @@ export default function BookingsAdmin() {
   async function load() {
     setLoading(true);
     try {
-      // Mỗi lần load trang sẽ kích hoạt dọn dẹp tự động 1 lần
+      // Tự động dọn dẹp mỗi khi load lại danh sách
       await runAutoClean(); 
 
       const p = new URLSearchParams();
@@ -67,15 +66,10 @@ export default function BookingsAdmin() {
   function applySearch(e: React.FormEvent) { e.preventDefault(); setKeyword(keywordInput); }
   function resetFilters() { setKeywordInput(""); setKeyword(""); setFilter(""); setTuNgay(""); setDenNgay(""); }
 
-  // Các hàm xử lý nghiệp vụ khác (confirm, complete, pay...)
-  async function confirmRefund(id: number) {
-    if (!confirm("Xác nhận đã hoàn tiền cho booking này?")) return;
-    try { await apiPost(`/api/bookings/${id}/confirm-refund`); load(); } catch (e: any) { alert(e.message); }
-  }
-
   async function markComplete(id: number) {
-    if (!confirm("Đánh dấu đơn này đã hoàn thành?")) return;
-    try { await apiPost(`/api/bookings/${id}/complete`); load(); } catch (e: any) { alert(e.message); }
+    if (!confirm("Xác nhận lịch chơi này đã kết thúc?")) return;
+    try { await apiPost(`/api/bookings/${id}/complete`); load(); } 
+    catch (e: any) { alert(e.message); }
   }
 
   const hasFilters = !!(keyword || filter || tuNgay || denNgay);
@@ -83,15 +77,15 @@ export default function BookingsAdmin() {
   return (
     <div className="space-y-6">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-3xl font-bold text-foreground">Lịch Đặt Sân</h1>
-        <p className="text-muted-foreground">Tự động hủy đơn quá hạn và cập nhật trạng thái hoàn thành</p>
+        <h1 className="text-3xl font-bold text-foreground">Quản Lý Vận Hành</h1>
+        <p className="text-muted-foreground">Tự động xử lý đơn quá hạn khi tải trang</p>
       </motion.div>
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card rounded-3xl border border-border p-6 space-y-4">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card rounded-3xl border border-border p-6 space-y-4 shadow-sm">
         <form onSubmit={applySearch} className="flex gap-3 flex-wrap">
           <div className="relative flex-1 min-w-[260px]">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-            <input value={keywordInput} onChange={(e) => setKeywordInput(e.target.value)} placeholder="Mã BK, tên khách, SĐT..." className="w-full pl-12 pr-4 py-3 rounded-2xl border border-input bg-background outline-none focus:border-primary" />
+            <input value={keywordInput} onChange={(e) => setKeywordInput(e.target.value)} placeholder="Tìm mã đơn, khách hàng..." className="w-full pl-12 pr-4 py-3 rounded-2xl border border-input bg-background outline-none focus:border-primary" />
           </div>
           <button type="submit" className="px-6 py-3 rounded-2xl bg-primary text-white font-semibold">Tìm kiếm</button>
           <button type="button" onClick={load} className="px-4 py-3 rounded-2xl bg-accent text-accent-foreground font-medium flex items-center gap-2">
@@ -106,11 +100,11 @@ export default function BookingsAdmin() {
         <div className="bg-card rounded-3xl border border-border overflow-hidden">
           <table className="w-full">
             <thead className="bg-secondary/50">
-              <tr className="text-xs font-semibold text-muted-foreground uppercase">
+              <tr className="text-xs font-bold text-muted-foreground uppercase">
                 <th className="p-4 text-left">Mã</th>
                 <th className="p-4 text-left">Khách</th>
-                <th className="p-4 text-left">Thời gian</th>
-                <th className="p-4 text-right">Tổng tiền</th>
+                <th className="p-4 text-left">Ngày đặt</th>
+                <th className="p-4 text-right">Thành tiền</th>
                 <th className="p-4 text-center">Trạng thái</th>
                 <th className="p-4"></th>
               </tr>
@@ -121,28 +115,15 @@ export default function BookingsAdmin() {
                 return (
                   <tr key={b.id} className="hover:bg-secondary/30 transition-colors">
                     <td className="p-4 font-mono font-bold text-primary">{b.ma_dat_san}</td>
-                    <td className="p-4">
-                      <div className="font-medium">{b.ten_khach}</div>
-                      <div className="text-xs text-muted-foreground">{b.sdt_khach}</div>
-                    </td>
-                    <td className="p-4">
-                      <div className="text-sm font-medium">{formatDate(b.ngay_dat)}</div>
-                      <div className="text-xs text-muted-foreground">{b.gio_bat_dau?.slice(0,5)} - {b.gio_ket_thuc?.slice(0,5)}</div>
-                    </td>
+                    <td className="p-4 font-medium">{b.ten_khach}</td>
+                    <td className="p-4 text-sm">{formatDate(b.ngay_dat)}</td>
                     <td className="p-4 text-right font-bold">{formatVND(b.invoice?.tong_cong || b.tien_san)}</td>
                     <td className="p-4 text-center">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold border ${st?.cls}`}>{st?.text}</span>
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-bold border ${st?.cls}`}>{st?.text}</span>
                     </td>
                     <td className="p-4 flex justify-end gap-2">
                       {b.trang_thai === "DA_XAC_NHAN" && (
-                        <button onClick={() => markComplete(b.id)} className="p-2 bg-primary/10 text-primary rounded-lg" title="Hoàn thành đơn">
-                          <CheckCircle2 className="w-5 h-5" />
-                        </button>
-                      )}
-                      {(b.trang_thai === "CHO_XAC_NHAN" || b.trang_thai === "DA_XAC_NHAN") && (
-                        <button onClick={() => setCancelTarget(b)} className="p-2 bg-destructive/10 text-destructive rounded-lg" title="Hủy đơn">
-                          <XCircle className="w-5 h-5" />
-                        </button>
+                        <button onClick={() => markComplete(b.id)} className="p-2 text-primary hover:bg-primary/10 rounded-lg"><CheckCircle2 className="w-5 h-5"/></button>
                       )}
                     </td>
                   </tr>
