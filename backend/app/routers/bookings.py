@@ -662,3 +662,68 @@ def send_reminder_now(
     b.reminder_sent = True
     db.commit()
     return {"ok": ok, "to": recipient_email}
+
+
+@router.post("/run-auto-tasks")
+def run_auto_tasks(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.ADMIN, UserRole.QUAN_LY)),
+):
+    """(Admin) Quét thủ công: Hủy booking quá 60p và Hoàn thành booking quá giờ."""
+    now = datetime.now()
+    
+    # 1. AUTO-CANCEL: Hủy booking "Chờ xác nhận" đã quá 60 phút
+    sixty_mins_ago = now - timedelta(minutes=60)
+    expired_bookings = db.query(Booking).filter(
+        Booking.trang_thai == BookingStatus.CHO_XAC_NHAN,
+        Booking.ngay_tao <= sixty_mins_ago
+    ).all()
+    
+    canceled_count = 0
+    for b in expired_bookings:
+        b.trang_thai = BookingStatus.HUY
+        b.ly_do_huy = "Tự động hủy do quá 60 phút không xác nhận thanh toán."
+        b.hoan_tien = False # Không hoàn tiền
+        
+        # Hoàn lại số lượng dịch vụ vào kho
+        for bs in b.booking_services:
+            if bs.dich_vu:
+                bs.dich_vu.ton_kho += bs.so_luong
+                
+        # Cập nhật ghi chú
+        b.ghi_chu = (b.ghi_chu or "") + f"\n[AUTO-CANCEL {now.strftime('%H:%M %d/%m/%Y')}]"
+        canceled_count += 1
+
+    # 2. AUTO-COMPLETE: Đánh dấu "Hoàn thành" booking "Đã xác nhận" đã qua thời gian kết thúc
+    past_bookings = db.query(Booking).filter(
+        Booking.trang_thai == BookingStatus.DA_XAC_NHAN,
+        Booking.ngay_dat <= now.date()
+    ).all()
+    
+    completed_count = 0
+    for b in past_bookings:
+        end_time_dt = datetime.combine(b.ngay_dat, b.gio_ket_thuc)
+        if end_time_dt < now:
+            b.trang_thai = BookingStatus.HOAN_THANH
+            
+            # Restock đồ thuê
+            restocked = []
+            for bs in b.booking_services:
+                svc = db.query(Service).filter(Service.id == bs.dich_vu_id).first()
+                if svc and svc.la_cho_thue:
+                    svc.ton_kho += bs.so_luong
+                    restocked.append(f"{svc.ten_dich_vu} +{bs.so_luong}")
+            
+            note = f"[AUTO-COMPLETE {now.strftime('%H:%M %d/%m/%Y')}]"
+            if restocked:
+                note += " Restock: " + ", ".join(restocked)
+                
+            b.ghi_chu = (b.ghi_chu or "") + "\n" + note
+            completed_count += 1
+            
+    db.commit()
+    return {
+        "ok": True, 
+        "canceled": canceled_count, 
+        "completed": completed_count
+    }
