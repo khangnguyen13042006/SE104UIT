@@ -69,11 +69,12 @@ export default function BookingPage() {
       apiGet("/api/services?trang_thai=HOAT_DONG"),
     ])
       .then(([f, s]) => {
-        setFields(Array.isArray(f) ? f : []);
+        const fieldData = Array.isArray(f) ? f : [];
+        setFields(fieldData);
         setServices(Array.isArray(s) ? s : []);
-        if (Array.isArray(f) && f.length > 0) setActiveField(f[0]);
+        if (fieldData.length > 0) setActiveField(fieldData[0]);
       })
-      .catch(() => setLoadErr("Lỗi kết nối máy chủ"));
+      .catch(() => setLoadErr("Lỗi kết nối dữ liệu máy chủ"));
 
     const u = getUser();
     if (u) {
@@ -100,32 +101,16 @@ export default function BookingPage() {
       .catch(() => setBookedRanges([]));
   }, [activeField, dateStr]);
 
-  // KHANG: Logic khóa giờ đã qua + giờ đã đặt
   function isStartAvailable(t: string, dur: number): boolean {
     const [sh, sm] = t.split(":").map(Number);
     const startM = sh * 60 + sm;
     const endM = startM + dur * 60;
-    
     if (endM > 23 * 60) return false;
-
-    // 1. Chặn giờ đã qua nếu là hôm nay
     if (isToday) {
       const now = new Date();
-      const currentMin = now.getHours() * 60 + now.getMinutes();
-      if (startM <= currentMin) return false; 
+      if (startM <= (now.getHours() * 60 + now.getMinutes())) return false;
     }
-
-    // 2. Chặn giờ đã bị đặt (bookedRanges)
     return !bookedRanges.some(b => startM < b.e && endM > b.s);
-  }
-
-  function setQty(svcId: number, qty: number) {
-    setChosenSvc((c) => {
-      const n = { ...c };
-      if (qty <= 0) delete n[svcId];
-      else n[svcId] = qty;
-      return n;
-    });
   }
 
   const tienSan = useMemo(() => {
@@ -165,57 +150,62 @@ export default function BookingPage() {
     } catch (e: any) { setErr(e.message); } finally { setSubmitting(false); }
   }
 
-  if (loadErr) return <div className="p-10 text-center text-red-500">{loadErr}</div>;
+  if (loadErr) return <div className="p-10 text-center text-red-500 font-serif">{loadErr}</div>;
 
   return (
     <div className="min-h-screen bg-background font-serif">
       <Navbar />
       <div className="max-w-7xl mx-auto px-4 py-6 grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          {/* Preview sân bóng */}
+          {/* Preview sân bóng - FIX LỖI CRASH VERCEL */}
           <section className="bg-card overflow-hidden rounded-3xl border border-border aspect-video relative shadow-sm">
             {activeField ? (
               <>
-                <img src={`/fields/img-1.jpg`} className="w-full h-full object-cover" />
+                <img src={`/fields/img-1.jpg`} className="w-full h-full object-cover" alt="Field Preview" />
                 <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent text-white">
-                  <h1 className="text-3xl font-bold">{activeField?.ten_san || "Đang tải..."}</h1>
+                  {/* Sử dụng ?.ten_san an toàn */}
+                  <h1 className="text-3xl font-bold">{activeField?.ten_san || "Sân bóng đá"}</h1>
                   <p className="opacity-90">{activeField?.loai_san === "SAN_5" ? "Sân 5 người" : "Sân 7 người"} · Sức chứa {activeField?.suc_chua || 0} người</p>
                 </div>
               </>
             ) : (
-              <div className="flex items-center justify-center h-full text-muted-foreground italic">Vui lòng chọn sân bóng</div>
+              <div className="flex items-center justify-center h-full text-muted-foreground italic">Đang tải dữ liệu sân...</div>
             )}
           </section>
 
           {/* 1. Chọn sân */}
           <section className="bg-card p-6 rounded-3xl border border-border">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Zap className="text-primary"/> 1. Chọn sân bóng</h2>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 font-display"><Zap className="text-primary w-5 h-5"/> 1. Chọn sân bóng</h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {fields?.map((f, idx) => (
-                <button key={f.id} onClick={() => setActiveField(f)} className={`p-2 rounded-2xl border-2 transition-all ${activeField?.id === f.id ? "border-primary bg-primary/5" : "border-transparent bg-secondary"}`}>
-                  <div className="aspect-video rounded-xl overflow-hidden mb-2"><img src={`/fields/img-${(idx % 6) + 1}.jpg`} className="w-full h-full object-cover" /></div>
-                  <div className="font-bold text-xs sm:text-sm">{f?.ten_san || "Sân chưa đặt tên"}</div>
-                </button>
-              ))}
+              {fields?.length > 0 ? (
+                fields.map((f, idx) => (
+                  <button key={f.id} onClick={() => setActiveField(f)} className={`p-2 rounded-2xl border-2 transition-all ${activeField?.id === f.id ? "border-primary bg-primary/5" : "border-transparent bg-secondary"}`}>
+                    <div className="aspect-video rounded-xl overflow-hidden mb-2"><img src={`/fields/img-${(idx % 6) + 1}.jpg`} className="w-full h-full object-cover" alt="Field" /></div>
+                    <div className="font-bold text-xs sm:text-sm">{f?.ten_san || "Sân chưa đặt tên"}</div>
+                  </button>
+                ))
+              ) : (
+                <div className="col-span-full py-10 text-center opacity-50 italic">Không có dữ liệu sân khả dụng.</div>
+              )}
             </div>
           </section>
 
           {/* 2. Ngày & Thời lượng */}
           <section className="bg-card p-6 rounded-3xl border border-border">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Calendar className="text-primary"/> 2. Chọn ngày & thời lượng</h2>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 font-display"><Calendar className="text-primary w-5 h-5"/> 2. Chọn ngày & thời lượng</h2>
             <div className="grid md:grid-cols-2 gap-6">
               <div className="space-y-3">
-                <input type="date" value={dateStr} min={today.toISOString().split("T")[0]} onChange={(e) => setSelectedDate(new Date(e.target.value))} className="w-full p-3 rounded-xl border-2 border-input bg-background font-bold" />
+                <input type="date" value={dateStr} min={today.toISOString().split("T")[0]} onChange={(e) => setSelectedDate(new Date(e.target.value))} className="w-full p-3 rounded-xl border-2 border-input bg-background font-bold outline-none focus:border-primary transition-all" />
                 <div className="flex flex-wrap gap-2">
                   {[0,1,2,3].map(i => {
                     const d = new Date(today); d.setDate(d.getDate()+i);
                     const isSel = selectedDate.toDateString() === d.toDateString();
-                    return <button key={i} onClick={() => setSelectedDate(d)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${isSel ? "bg-primary text-white" : "bg-secondary hover:bg-secondary/80 text-foreground"}`}>{i===0?"Hôm nay":i===1?"Ngày mai":`${d.getDate()}/${d.getMonth()+1}`}</button>
+                    return <button key={i} onClick={() => setSelectedDate(d)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${isSel ? "bg-primary text-white shadow-sm" : "bg-secondary hover:bg-secondary/80"}`}>{i===0?"Hôm nay":i===1?"Ngày mai":`${d.getDate()}/${d.getMonth()+1}`}</button>
                   })}
                 </div>
               </div>
               <div className="space-y-3">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Thời lượng chơi</label>
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-1">Thời lượng đá</label>
                 <div className="flex flex-wrap gap-2">
                   {DURATIONS.map(d => <button key={d} onClick={() => setDuration(d)} className={`px-4 py-2 rounded-xl border-2 font-bold transition-all ${duration===d?"border-primary bg-primary/10 text-primary":"border-transparent bg-secondary"}`}>{d}h</button>)}
                 </div>
@@ -225,7 +215,7 @@ export default function BookingPage() {
 
           {/* 3. Giờ bắt đầu */}
           <section className="bg-card p-6 rounded-3xl border border-border">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Clock className="text-primary"/> 3. Chọn giờ bắt đầu</h2>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 font-display"><Clock className="text-primary w-5 h-5"/> 3. Chọn giờ bắt đầu</h2>
             <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
               {START_TIMES.map(t => {
                 const ok = isStartAvailable(t, duration);
@@ -237,7 +227,7 @@ export default function BookingPage() {
                     onClick={() => setStartTime(t)} 
                     className={`p-2 rounded-xl border-2 font-bold text-sm transition-all ${
                       isSel ? "bg-primary text-white border-primary shadow-md" : 
-                      !ok ? "opacity-20 cursor-not-allowed bg-secondary/50 border-transparent" : 
+                      !ok ? "opacity-10 cursor-not-allowed bg-secondary/50 border-transparent grayscale" : 
                       "bg-secondary hover:border-primary/40 border-transparent"
                     }`}
                   >
@@ -250,50 +240,62 @@ export default function BookingPage() {
 
           {/* 4. Dịch vụ */}
           <section className="bg-card p-6 rounded-3xl border border-border">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Package className="text-primary"/> 4. Dịch vụ đi kèm</h2>
-            <div className="grid sm:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-2">
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 font-display"><Package className="text-primary w-5 h-5"/> 4. Dịch vụ đi kèm</h2>
+            <div className="grid sm:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
               {services?.map((svc) => {
                 const qty = chosenSvc[svc.id] || 0;
                 return (
-                  <label key={svc.id} className={`flex items-center gap-4 p-4 rounded-2xl border-2 cursor-pointer transition-all ${qty > 0 ? "border-primary bg-primary/5" : "border-border"}`}>
-                    <input type="checkbox" checked={qty > 0} onChange={(e) => setQty(svc.id, e.target.checked ? 1 : 0)} className="w-5 h-5 accent-primary" />
+                  <label key={svc.id} className={`flex items-center gap-4 p-4 rounded-2xl border-2 cursor-pointer transition-all ${qty > 0 ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:bg-secondary/40"}`}>
+                    <input type="checkbox" checked={qty > 0} onChange={(e) => {
+                      const n = { ...chosenSvc };
+                      if (e.target.checked) n[svc.id] = 1; else delete n[svc.id];
+                      setChosenSvc(n);
+                    }} className="w-5 h-5 accent-primary" />
                     <div className="flex-1"><div className="font-bold text-sm">{svc.ten_dich_vu}</div><div className="text-xs opacity-60">{formatVND(svc.don_gia)}/{svc.don_vi_tinh}</div></div>
-                    {qty > 0 && <div className="flex items-center gap-2" onClick={e => e.preventDefault()}><button onClick={() => setQty(svc.id, qty - 1)} className="w-8 h-8 rounded-lg bg-secondary font-bold">−</button><span className="w-5 text-center font-bold text-sm">{qty}</span><button onClick={() => setQty(svc.id, qty + 1)} className="w-8 h-8 rounded-lg bg-secondary font-bold">+</button></div>}
+                    {qty > 0 && <div className="flex items-center gap-2" onClick={e => e.preventDefault()}><button onClick={() => {
+                        const n = { ...chosenSvc }; if (qty > 1) n[svc.id] = qty - 1; else delete n[svc.id]; setChosenSvc(n);
+                      }} className="w-8 h-8 rounded-lg bg-secondary font-bold">−</button><span className="w-5 text-center font-bold text-sm">{qty}</span><button onClick={() => {
+                        const n = { ...chosenSvc }; n[svc.id] = qty + 1; setChosenSvc(n);
+                      }} className="w-8 h-8 rounded-lg bg-secondary font-bold">+</button></div>}
                   </label>
                 );
               })}
             </div>
           </section>
-
-          {/* 5. Thông tin khách hàng */}
-          <section className="bg-card p-6 rounded-3xl border border-border">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><User className="text-primary"/> 5. Thông tin liên hệ</h2>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="space-y-1"><label className="text-xs font-bold px-1">Họ tên *</label><input value={tenKhach} onChange={e => setTenKhach(e.target.value)} className="w-full p-3 rounded-xl border border-input bg-background" placeholder="Nguyễn Văn A" /></div>
-              <div className="space-y-1"><label className="text-xs font-bold px-1">Số điện thoại *</label><input value={sdtKhach} onChange={e => setSdtKhach(e.target.value)} className="w-full p-3 rounded-xl border border-input bg-background" placeholder="090..." maxLength={10} /></div>
-            </div>
-          </section>
         </div>
 
-        {/* Sidebar Tóm tắt */}
+        {/* Sidebar Tóm tắt đơn */}
         <aside className="space-y-6">
           <div className="sticky top-24 bg-card p-6 rounded-3xl border border-border shadow-xl">
             <h3 className="text-xl font-bold mb-6 font-display">Tóm tắt đơn đặt</h3>
-            <div className="space-y-4 border-b pb-6 mb-6 text-sm">
-              <div className="flex justify-between"><span>Sân:</span><span className="font-bold">{activeField?.ten_san || "Chưa chọn"}</span></div>
-              <div className="flex justify-between"><span>Ngày:</span><span className="font-bold">{selectedDate.toLocaleDateString("vi-VN")}</span></div>
-              <div className="flex justify-between text-primary font-bold"><span>Giờ:</span><span>{startTime ? `${startTime} - ${addDuration(startTime, duration)}` : "Chưa chọn"}</span></div>
+            <div className="space-y-4 border-b border-dashed pb-6 mb-6 text-sm">
+              <div className="flex justify-between items-center text-muted-foreground italic">
+                <span>Sân:</span>
+                {/* Sử dụng ?.ten_san và fallback an toàn tuyệt đối */}
+                <span className="font-bold text-foreground not-italic">{activeField?.ten_san || "Chưa chọn sân"}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Ngày đá:</span>
+                <span className="font-bold">{selectedDate.toLocaleDateString("vi-VN")}</span>
+              </div>
+              <div className="flex justify-between items-center text-primary font-bold">
+                <span>Giờ đá:</span>
+                <span>{startTime ? `${startTime} - ${addDuration(startTime, duration)}` : "Chưa chọn giờ"}</span>
+              </div>
             </div>
+            
             <div className="space-y-3 mb-8">
               <div className="flex justify-between text-muted-foreground"><span>Tiền sân:</span><span>{formatVND(tienSan)}</span></div>
-              {tienDV > 0 && <div className="flex justify-between text-muted-foreground"><span>Dịch vụ:</span><span>{formatVND(tienDV)}</span></div>}
-              {giamGia > 0 && <div className="flex justify-between text-primary font-medium"><span>Giảm giá:</span><span>-{formatVND(giamGia)}</span></div>}
-              <div className="flex justify-between text-xl font-bold border-t pt-3 mt-3"><span>Tổng cộng:</span><span className="text-primary">{formatVND(tongCong)}</span></div>
+              {tienDV > 0 && <div className="flex justify-between text-muted-foreground font-medium"><span>Dịch vụ:</span><span>{formatVND(tienDV)}</span></div>}
+              {giamGia > 0 && <div className="flex justify-between text-primary font-bold"><span>Giảm giá thành viên:</span><span>-{formatVND(giamGia)}</span></div>}
+              <div className="flex justify-between text-xl font-bold border-t pt-3 mt-3 border-border"><span>Tổng cộng:</span><span className="text-primary font-display">{formatVND(tongCong)}</span></div>
             </div>
-            {err && <div className="p-3 bg-destructive/10 text-destructive rounded-xl text-xs mb-4">{err}</div>}
-            <button onClick={submit} disabled={submitting || !startTime} className="w-full py-4 bg-primary text-white rounded-2xl font-bold shadow-lg hover:shadow-primary/90 disabled:opacity-50 transition-all flex justify-center gap-2 items-center">
+
+            {err && <div className="p-3 bg-destructive/10 text-destructive rounded-xl text-xs mb-4 flex items-center gap-2"><AlertCircle className="w-4 h-4"/> {err}</div>}
+
+            <button onClick={submit} disabled={submitting || !startTime || !activeField} className="w-full py-4 bg-primary text-white rounded-2xl font-bold shadow-lg hover:shadow-primary/30 disabled:opacity-50 transition-all flex justify-center gap-2 items-center">
               {submitting ? <Loader2 className="animate-spin w-5 h-5"/> : <CheckCircle2 className="w-5 h-5"/>} 
-              {submitting ? "Đang xử lý..." : "Đặt sân ngay"}
+              {submitting ? "Đang gửi đơn..." : "Xác nhận đặt sân"}
             </button>
           </div>
         </aside>
