@@ -52,6 +52,19 @@ export default function BookingsAdmin() {
   function applySearch(e: React.FormEvent) { e.preventDefault(); setKeyword(keywordInput); }
   function resetFilters() { setKeywordInput(""); setKeyword(""); setFilter(""); setTuNgay(""); setDenNgay(""); }
 
+  async function runAutoTasks() {
+    if (!confirm("Bắt đầu dọn dẹp hệ thống?\nSẽ tự hủy đơn quá 60p và hoàn thành đơn qua giờ.")) return;
+    setLoading(true);
+    try {
+      const res = await apiPost('/api/bookings/run-auto-tasks');
+      alert(`Đã dọn dẹp!\nHủy: ${res.canceled} đơn\nHoàn thành: ${res.completed} đơn`);
+      load();
+    } catch (e: any) {
+      alert("Lỗi: " + e.message);
+      setLoading(false);
+    }
+  }
+
   async function confirmRefund(id: number) {
     if (!confirm("Xác nhận đã hoàn tiền cho booking này?\nHành động không thể hoàn tác.")) return;
     try {
@@ -124,8 +137,14 @@ export default function BookingsAdmin() {
             <span className="text-muted-foreground">→</span>
             <input type="date" value={denNgay} onChange={(e) => setDenNgay(e.target.value)} className="px-3 py-2 rounded-xl border border-input bg-background focus:border-primary outline-none" />
           </div>
-          <div className="ml-auto text-sm text-muted-foreground">
-            Tìm thấy <strong className="text-foreground">{list.length}</strong> kết quả
+          
+          <div className="ml-auto flex items-center gap-4">
+            <button type="button" onClick={runAutoTasks} className="px-4 py-2 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold flex items-center gap-2 transition-colors text-sm shadow-sm">
+              <RotateCcw className="w-4 h-4" /> Dọn dẹp tự động
+            </button>
+            <div className="text-sm text-muted-foreground">
+              Tìm thấy <strong className="text-foreground">{list.length}</strong> kết quả
+            </div>
           </div>
         </div>
       </motion.div>
