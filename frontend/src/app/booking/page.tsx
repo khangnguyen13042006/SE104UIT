@@ -33,7 +33,7 @@ export default function BookingPage() {
   const router = useRouter();
   const [fields, setFields] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
-  const [activeField, setActiveField] = useState<any>(null);
+  const [activeField, setActiveField] = useState<any>(null); // Khởi tạo null
   
   const today = useMemo(() => {
     const d = new Date();
@@ -69,12 +69,11 @@ export default function BookingPage() {
       apiGet("/api/services?trang_thai=HOAT_DONG"),
     ])
       .then(([f, s]) => {
-        const fieldData = Array.isArray(f) ? f : [];
-        setFields(fieldData);
+        setFields(Array.isArray(f) ? f : []);
         setServices(Array.isArray(s) ? s : []);
-        if (fieldData.length > 0) setActiveField(fieldData[0]);
+        if (Array.isArray(f) && f.length > 0) setActiveField(f[0]);
       })
-      .catch(() => setLoadErr("Lỗi kết nối dữ liệu máy chủ"));
+      .catch(() => setLoadErr("Lỗi kết nối máy chủ"));
 
     const u = getUser();
     if (u) {
@@ -86,7 +85,7 @@ export default function BookingPage() {
   }, []);
 
   useEffect(() => {
-    if (!activeField?.id) return;
+    if (!activeField?.id) return; // Bảo vệ nếu activeField null
     setStartTime(null);
     apiGet(`/api/fields/${activeField.id}/schedule?ngay=${dateStr}`)
       .then((r) => {
@@ -120,6 +119,7 @@ export default function BookingPage() {
     const e = s + duration * 60;
     const peak = 17 * 60;
     let total = 0;
+    // Dùng ?. để truy cập thuộc tính an toàn
     const giaTieuChuan = activeField?.gia_tieu_chuan || 0;
     const giaCaoDiem = activeField?.gia_cao_diem || giaTieuChuan;
     
@@ -137,7 +137,10 @@ export default function BookingPage() {
   const tongCong = tienSan + tienDV - giamGia;
 
   async function submit() {
-    if (!startTime || !tenKhach || !sdtKhach || !activeField) { setErr("Vui lòng điền đủ thông tin"); return; }
+    if (!startTime || !tenKhach || !sdtKhach || !activeField) { 
+      setErr("Vui lòng điền đủ thông tin"); 
+      return; 
+    }
     setSubmitting(true);
     try {
       const res = await apiPost("/api/bookings/guest", {
@@ -150,156 +153,144 @@ export default function BookingPage() {
     } catch (e: any) { setErr(e.message); } finally { setSubmitting(false); }
   }
 
-  if (loadErr) return <div className="p-10 text-center text-red-500 font-serif">{loadErr}</div>;
+  if (loadErr) return <div className="p-10 text-center text-red-500">{loadErr}</div>;
 
   return (
     <div className="min-h-screen bg-background font-serif">
       <Navbar />
-      <div className="max-w-7xl mx-auto px-4 py-6 grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          {/* Preview sân bóng - FIX LỖI CRASH VERCEL */}
-          <section className="bg-card overflow-hidden rounded-3xl border border-border aspect-video relative shadow-sm">
+      <div className="max-w-7xl mx-auto px-4 py-8 grid lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 space-y-8">
+          {/* Preview sân bóng - Chống crash bằng ?. */}
+          <section className="bg-card overflow-hidden rounded-3xl border border-border aspect-video relative">
             {activeField ? (
               <>
-                <img src={`/fields/img-1.jpg`} className="w-full h-full object-cover" alt="Field Preview" />
+                <img src={`/fields/img-1.jpg`} className="w-full h-full object-cover" />
                 <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent text-white">
-                  {/* Sử dụng ?.ten_san an toàn */}
-                  <h1 className="text-3xl font-bold">{activeField?.ten_san || "Sân bóng đá"}</h1>
-                  <p className="opacity-90">{activeField?.loai_san === "SAN_5" ? "Sân 5 người" : "Sân 7 người"} · Sức chứa {activeField?.suc_chua || 0} người</p>
+                  <h1 className="text-3xl font-bold">{activeField?.ten_san || "Đang tải..."}</h1>
                 </div>
               </>
             ) : (
-              <div className="flex items-center justify-center h-full text-muted-foreground italic">Đang tải dữ liệu sân...</div>
+              <div className="flex items-center justify-center h-full text-muted-foreground italic">Vui lòng chọn sân</div>
             )}
           </section>
 
           {/* 1. Chọn sân */}
           <section className="bg-card p-6 rounded-3xl border border-border">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 font-display"><Zap className="text-primary w-5 h-5"/> 1. Chọn sân bóng</h2>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Zap className="text-primary"/> 1. Chọn sân</h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {fields?.length > 0 ? (
-                fields.map((f, idx) => (
-                  <button key={f.id} onClick={() => setActiveField(f)} className={`p-2 rounded-2xl border-2 transition-all ${activeField?.id === f.id ? "border-primary bg-primary/5" : "border-transparent bg-secondary"}`}>
-                    <div className="aspect-video rounded-xl overflow-hidden mb-2"><img src={`/fields/img-${(idx % 6) + 1}.jpg`} className="w-full h-full object-cover" alt="Field" /></div>
-                    <div className="font-bold text-xs sm:text-sm">{f?.ten_san || "Sân chưa đặt tên"}</div>
-                  </button>
-                ))
-              ) : (
-                <div className="col-span-full py-10 text-center opacity-50 italic">Không có dữ liệu sân khả dụng.</div>
-              )}
+              {fields?.map(f => (
+                <button key={f.id} onClick={() => setActiveField(f)} className={`p-2 rounded-2xl border-2 transition-all ${activeField?.id === f.id ? "border-primary bg-primary/5" : "border-transparent bg-secondary"}`}>
+                  <div className="aspect-video rounded-xl overflow-hidden mb-2"><img src={`/fields/img-1.jpg`} className="w-full h-full object-cover" /></div>
+                  <div className="font-bold text-sm">{f?.ten_san || "Sân chưa đặt tên"}</div>
+                </button>
+              ))}
             </div>
           </section>
 
           {/* 2. Ngày & Thời lượng */}
           <section className="bg-card p-6 rounded-3xl border border-border">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 font-display"><Calendar className="text-primary w-5 h-5"/> 2. Chọn ngày & thời lượng</h2>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Calendar className="text-primary"/> 2. Thời gian</h2>
             <div className="grid md:grid-cols-2 gap-6">
               <div className="space-y-3">
-                <input type="date" value={dateStr} min={today.toISOString().split("T")[0]} onChange={(e) => setSelectedDate(new Date(e.target.value))} className="w-full p-3 rounded-xl border-2 border-input bg-background font-bold outline-none focus:border-primary transition-all" />
+                <input type="date" value={dateStr} min={today.toISOString().split("T")[0]} onChange={(e) => setSelectedDate(new Date(e.target.value))} className="w-full p-3 rounded-xl border-2 border-input bg-background font-bold" />
                 <div className="flex flex-wrap gap-2">
                   {[0,1,2,3].map(i => {
                     const d = new Date(today); d.setDate(d.getDate()+i);
-                    const isSel = selectedDate.toDateString() === d.toDateString();
-                    return <button key={i} onClick={() => setSelectedDate(d)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${isSel ? "bg-primary text-white shadow-sm" : "bg-secondary hover:bg-secondary/80"}`}>{i===0?"Hôm nay":i===1?"Ngày mai":`${d.getDate()}/${d.getMonth()+1}`}</button>
+                    return <button key={i} onClick={() => setSelectedDate(d)} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${selectedDate.toDateString() === d.toDateString() ? "bg-primary text-white" : "bg-secondary"}`}>{i===0?"Hôm nay":i===1?"Ngày mai":`${d.getDate()}/${d.getMonth()+1}`}</button>
                   })}
                 </div>
               </div>
-              <div className="space-y-3">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-1">Thời lượng đá</label>
-                <div className="flex flex-wrap gap-2">
-                  {DURATIONS.map(d => <button key={d} onClick={() => setDuration(d)} className={`px-4 py-2 rounded-xl border-2 font-bold transition-all ${duration===d?"border-primary bg-primary/10 text-primary":"border-transparent bg-secondary"}`}>{d}h</button>)}
-                </div>
+              <div className="flex flex-wrap gap-2 h-fit">
+                {DURATIONS.map(d => <button key={d} onClick={() => setDuration(d)} className={`px-4 py-2 rounded-xl border-2 font-bold ${duration===d?"border-primary bg-primary/10 text-primary":"border-transparent bg-secondary"}`}>{d}h</button>)}
               </div>
             </div>
           </section>
 
           {/* 3. Giờ bắt đầu */}
           <section className="bg-card p-6 rounded-3xl border border-border">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 font-display"><Clock className="text-primary w-5 h-5"/> 3. Chọn giờ bắt đầu</h2>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Clock className="text-primary"/> 3. Giờ bắt đầu</h2>
             <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
               {START_TIMES.map(t => {
                 const ok = isStartAvailable(t, duration);
-                const isSel = startTime === t;
-                return (
-                  <button 
-                    key={t} 
-                    disabled={!ok} 
-                    onClick={() => setStartTime(t)} 
-                    className={`p-2 rounded-xl border-2 font-bold text-sm transition-all ${
-                      isSel ? "bg-primary text-white border-primary shadow-md" : 
-                      !ok ? "opacity-10 cursor-not-allowed bg-secondary/50 border-transparent grayscale" : 
-                      "bg-secondary hover:border-primary/40 border-transparent"
-                    }`}
-                  >
-                    {t}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          {/* 4. Dịch vụ */}
-          <section className="bg-card p-6 rounded-3xl border border-border">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 font-display"><Package className="text-primary w-5 h-5"/> 4. Dịch vụ đi kèm</h2>
-            <div className="grid sm:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-              {services?.map((svc) => {
-                const qty = chosenSvc[svc.id] || 0;
-                return (
-                  <label key={svc.id} className={`flex items-center gap-4 p-4 rounded-2xl border-2 cursor-pointer transition-all ${qty > 0 ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:bg-secondary/40"}`}>
-                    <input type="checkbox" checked={qty > 0} onChange={(e) => {
-                      const n = { ...chosenSvc };
-                      if (e.target.checked) n[svc.id] = 1; else delete n[svc.id];
-                      setChosenSvc(n);
-                    }} className="w-5 h-5 accent-primary" />
-                    <div className="flex-1"><div className="font-bold text-sm">{svc.ten_dich_vu}</div><div className="text-xs opacity-60">{formatVND(svc.don_gia)}/{svc.don_vi_tinh}</div></div>
-                    {qty > 0 && <div className="flex items-center gap-2" onClick={e => e.preventDefault()}><button onClick={() => {
-                        const n = { ...chosenSvc }; if (qty > 1) n[svc.id] = qty - 1; else delete n[svc.id]; setChosenSvc(n);
-                      }} className="w-8 h-8 rounded-lg bg-secondary font-bold">−</button><span className="w-5 text-center font-bold text-sm">{qty}</span><button onClick={() => {
-                        const n = { ...chosenSvc }; n[svc.id] = qty + 1; setChosenSvc(n);
-                      }} className="w-8 h-8 rounded-lg bg-secondary font-bold">+</button></div>}
-                  </label>
-                );
+                return <button key={t} disabled={!ok} onClick={() => setStartTime(t)} className={`p-2 rounded-xl border-2 font-bold text-sm ${startTime===t?"bg-primary text-white border-primary":!ok?"opacity-20 cursor-not-allowed":"bg-secondary border-transparent"}`}>{t}</button>
               })}
             </div>
           </section>
         </div>
-
-        {/* Sidebar Tóm tắt đơn */}
-        <aside className="space-y-6">
-          <div className="sticky top-24 bg-card p-6 rounded-3xl border border-border shadow-xl">
-            <h3 className="text-xl font-bold mb-6 font-display">Tóm tắt đơn đặt</h3>
-            <div className="space-y-4 border-b border-dashed pb-6 mb-6 text-sm">
-              <div className="flex justify-between items-center text-muted-foreground italic">
-                <span>Sân:</span>
-                {/* Sử dụng ?.ten_san và fallback an toàn tuyệt đối */}
-                <span className="font-bold text-foreground not-italic">{activeField?.ten_san || "Chưa chọn sân"}</span>
+        {/* Step 4: Dịch vụ đi kèm */}
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="bg-card rounded-3xl border border-border p-6">
+              <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">4</span>Dịch vụ đi kèm</h2>
+              <div className="max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {services.map((svc) => {
+                    const qty = chosenSvc[svc.id] || 0;
+                    return (
+                      <label key={svc.id} className={`flex items-center gap-4 p-4 rounded-2xl border-2 cursor-pointer transition-all ${qty > 0 ? "border-primary bg-primary/5" : "border-border hover:border-primary/30"}`}>
+                        <input type="checkbox" checked={qty > 0} onChange={(e) => setQty(svc.id, e.target.checked ? 1 : 0)} className="w-5 h-5 rounded-lg accent-primary" />
+                        <div className="flex-1"><div className="font-medium text-foreground">{svc.ten_dich_vu}</div><div className="text-sm text-muted-foreground">{formatVND(svc.don_gia)}/{svc.don_vi_tinh}</div></div>
+                        {qty > 0 && <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}><button onClick={() => setQty(svc.id, qty - 1)} className="w-8 h-8 rounded-lg bg-secondary font-bold">−</button><span className="w-8 text-center font-bold">{qty}</span><button onClick={() => setQty(svc.id, qty + 1)} className="w-8 h-8 rounded-lg bg-secondary font-bold">+</button></div>}
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Ngày đá:</span>
-                <span className="font-bold">{selectedDate.toLocaleDateString("vi-VN")}</span>
-              </div>
-              <div className="flex justify-between items-center text-primary font-bold">
-                <span>Giờ đá:</span>
-                <span>{startTime ? `${startTime} - ${addDuration(startTime, duration)}` : "Chưa chọn giờ"}</span>
-              </div>
-            </div>
-            
-            <div className="space-y-3 mb-8">
-              <div className="flex justify-between text-muted-foreground"><span>Tiền sân:</span><span>{formatVND(tienSan)}</span></div>
-              {tienDV > 0 && <div className="flex justify-between text-muted-foreground font-medium"><span>Dịch vụ:</span><span>{formatVND(tienDV)}</span></div>}
-              {giamGia > 0 && <div className="flex justify-between text-primary font-bold"><span>Giảm giá thành viên:</span><span>-{formatVND(giamGia)}</span></div>}
-              <div className="flex justify-between text-xl font-bold border-t pt-3 mt-3 border-border"><span>Tổng cộng:</span><span className="text-primary font-display">{formatVND(tongCong)}</span></div>
-            </div>
+            </motion.div>
 
-            {err && <div className="p-3 bg-destructive/10 text-destructive rounded-xl text-xs mb-4 flex items-center gap-2"><AlertCircle className="w-4 h-4"/> {err}</div>}
-
-            <button onClick={submit} disabled={submitting || !startTime || !activeField} className="w-full py-4 bg-primary text-white rounded-2xl font-bold shadow-lg hover:shadow-primary/30 disabled:opacity-50 transition-all flex justify-center gap-2 items-center">
-              {submitting ? <Loader2 className="animate-spin w-5 h-5"/> : <CheckCircle2 className="w-5 h-5"/>} 
-              {submitting ? "Đang gửi đơn..." : "Xác nhận đặt sân"}
-            </button>
+            {/* Step 5: Thông tin liên hệ */}
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="bg-card rounded-3xl border border-border p-6">
+              <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">5</span>Thông tin liên hệ</h2>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div><label className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2"><User className="w-4 h-4" /> Họ tên <span className="text-destructive">*</span></label><input value={tenKhach} onChange={(e) => setTenKhach(e.target.value)} placeholder="Nguyễn Văn A" className="w-full px-4 py-3 rounded-xl border border-input bg-background focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all" /></div>
+                <div><label className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2"><Phone className="w-4 h-4" /> Số điện thoại <span className="text-destructive">*</span></label><input value={sdtKhach} onChange={(e) => setSdtKhach(e.target.value)} placeholder="0901234567" maxLength={10} className="w-full px-4 py-3 rounded-xl border border-input bg-background focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all" /></div>
+                <div className="sm:col-span-2"><label className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2"><Mail className="w-4 h-4" /> Email <span className="text-muted-foreground font-normal">(tùy chọn)</span></label><input value={emailKhach} onChange={(e) => setEmailKhach(e.target.value)} placeholder="ban@email.com" type="email" className="w-full px-4 py-3 rounded-xl border border-input bg-background focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all" /></div>
+              </div>
+            </motion.div>
           </div>
-        </aside>
+
+          {/* Sidebar - Tóm tắt và Tính tiền */}
+          <div className="lg:col-span-1">
+            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="sticky top-24 bg-card rounded-3xl border border-border p-6 shadow-xl">
+              <h3 className="text-lg font-display font-bold text-foreground mb-4">Tóm tắt đơn đặt</h3>
+              <div className="p-4 rounded-2xl bg-secondary/50 mb-4">
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl">⚽</span>
+                  <div>
+                    <div className="font-bold text-foreground">{activeField.ten_san}</div>
+                    <div className="text-sm text-muted-foreground">{activeField.loai_san === "SAN_5" ? "Sân 5 người" : "Sân 7 người"}</div>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-3 mb-6">
+                <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground flex items-center gap-2"><Calendar className="w-4 h-4" /> Ngày</span><span className="font-medium text-foreground">{selectedDate.toLocaleDateString("vi-VN")}</span></div>
+                <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground flex items-center gap-2"><Clock className="w-4 h-4" /> Thời gian</span><span className="font-medium text-foreground">{startTime ? `${startTime} - ${endTime}` : "Chưa chọn"}</span></div>
+                <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground flex items-center gap-2"><Users className="w-4 h-4" /> Thời lượng</span><span className="font-medium text-foreground">{duration === 0.5 ? "30 phút" : `${duration} giờ`}</span></div>
+              </div>
+
+              {memberStatus && memberStatus.discount_percent > 0 && (
+                <div className="border-t border-border pt-4 mb-4">
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/20">
+                    <Sparkles className="w-4 h-4 text-primary" /><div className="flex-1 text-xs"><div className="font-semibold">Thẻ {memberStatus.tier_name}</div><div className="text-muted-foreground">Giảm {memberStatus.discount_percent}% tiền sân</div></div>
+                  </div>
+                </div>
+              )}
+
+              <div className="border-t border-border pt-4 space-y-2">
+                <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Tiền sân</span><span className="font-medium">{formatVND(tienSan)}</span></div>
+                {tienDV > 0 && <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Dịch vụ</span><span className="font-medium">{formatVND(tienDV)}</span></div>}
+                {giamGia > 0 && <div className="flex items-center justify-between text-sm"><span className="text-primary flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> Giảm giá thẻ</span><span className="font-semibold text-primary">−{formatVND(giamGia)}</span></div>}
+                <div className="flex items-center justify-between pt-2 border-t border-border mt-2"><span className="font-bold">Tổng cộng</span><span className="text-2xl font-display font-bold text-primary">{formatVND(tongCong)}</span></div>
+              </div>
+
+              <AnimatePresence>{err && <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="mt-4 p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm">{err}</motion.div>}</AnimatePresence>
+
+              <button onClick={submit} disabled={submitting || !startTime} className="w-full mt-6 py-4 bg-primary text-white rounded-2xl font-semibold shadow-lg hover:shadow-primary/40 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+                {submitting ? <><Loader2 className="w-5 h-5 animate-spin" /><span>Xử lý...</span></> : <><CheckCircle2 className="w-5 h-5" /><span>Đặt sân ngay</span></>}
+              </button>
+              <div className="mt-4 flex items-center gap-3 p-3 rounded-xl bg-accent/10 border border-accent/20"><Wifi className="w-5 h-5 text-accent" /><p className="text-[10px] text-muted-foreground">Hỗ trợ: Wifi, bãi đỗ xe, nước uống miễn phí.</p></div>
+            </motion.div>
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
