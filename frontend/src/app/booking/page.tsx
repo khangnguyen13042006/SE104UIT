@@ -397,7 +397,94 @@ export default function BookingPage() {
               </div>
             </motion.div>
 
-            v
+            {/* Date & Duration */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="bg-card rounded-3xl border border-border p-6"
+            >
+              <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">2</span>
+                Chọn ngày & thời lượng
+              </h2>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Cột 1: Chọn ngày */}
+                <div>
+                  <label className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-muted-foreground" /> Ngày đặt sân
+                  </label>
+                  
+                  <div className="flex flex-col gap-3">
+                    {/* Ô input date nhỏ gọn giống hình */}
+                    <input
+                      type="date"
+                      value={dateStr}
+                      min={`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          setSelectedDate(new Date(e.target.value));
+                        }
+                      }}
+                      className="w-full sm:max-w-[220px] px-4 py-2.5 rounded-xl border-2 border-input bg-background focus:border-primary focus:ring-0 outline-none transition-all font-semibold cursor-pointer"
+                    />
+
+                    {/* Các nút Quick Dates: Hôm nay -> 3 ngày sau */}
+                    <div className="flex flex-wrap gap-2">
+                      {Array.from({ length: 4 }).map((_, i) => {
+                        const d = addDays(today, i);
+                        const isSel = sameDay(d, selectedDate);
+                        
+                        let label = "";
+                        if (i === 0) label = "Hôm nay";
+                        else if (i === 1) label = "Ngày mai";
+                        else {
+                          const days = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+                          label = `${days[d.getDay()]}, ${d.getDate()}/${d.getMonth() + 1}`;
+                        }
+
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => setSelectedDate(d)}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+                              isSel
+                                ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                                : "bg-secondary hover:bg-secondary/80 text-foreground"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cột 2: Thời lượng */}
+                <div>
+                  <label className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-muted-foreground" /> Thời lượng
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {DURATIONS.map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => setDuration(d)}
+                        className={`min-w-[4rem] px-3 py-2.5 rounded-xl text-sm font-bold transition-all border-2 ${
+                          duration === d
+                            ? "border-primary bg-primary/10 text-primary shadow-sm"
+                            : "border-transparent bg-secondary hover:bg-secondary/80 text-foreground"
+                        }`}
+                      >
+                        {d === 0.5 ? "30p" : `${d}h`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
 
             {/* Time Slots */}
             <motion.div
