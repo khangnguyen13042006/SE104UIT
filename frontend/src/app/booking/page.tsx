@@ -397,57 +397,7 @@ export default function BookingPage() {
               </div>
             </motion.div>
 
-            {/* Date & Duration */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="bg-card rounded-3xl border border-border p-6"
-            >
-              <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2">
-                <span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">2</span>
-                Chọn ngày & thời lượng
-              </h2>
-
-              {/* Full Calendar Picker — chọn ngày bất kỳ */}
-              <CalendarPicker
-                selected={selectedDate}
-                month={calendarMonth}
-                onMonthChange={setCalendarMonth}
-                onSelect={(d) => setSelectedDate(d)}
-                minDate={today}
-              />
-
-              {/* Quick presets */}
-              <div className="flex gap-2 flex-wrap mt-3 mb-6">
-                <QuickDateBtn label="Hôm nay" date={today} selected={selectedDate} onSelect={setSelectedDate} setMonth={setCalendarMonth} />
-                <QuickDateBtn label="Ngày mai" date={addDays(today, 1)} selected={selectedDate} onSelect={setSelectedDate} setMonth={setCalendarMonth} />
-                <QuickDateBtn label="Cuối tuần" date={nextWeekend(today)} selected={selectedDate} onSelect={setSelectedDate} setMonth={setCalendarMonth} />
-                <QuickDateBtn label="Tuần sau" date={addDays(today, 7)} selected={selectedDate} onSelect={setSelectedDate} setMonth={setCalendarMonth} />
-              </div>
-
-              {/* Duration */}
-              <div className="mb-4">
-                <label className="text-sm font-semibold text-foreground mb-3 block">
-                  Thời lượng chơi
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {DURATIONS.map((d) => (
-                    <button
-                      key={d}
-                      onClick={() => setDuration(d)}
-                      className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                        duration === d
-                          ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
-                          : "bg-secondary hover:bg-secondary/80 text-foreground"
-                      }`}
-                    >
-                      {d === 0.5 ? "30 phút" : `${d} giờ`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
+            v
 
             {/* Time Slots */}
             <motion.div
