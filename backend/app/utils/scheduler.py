@@ -1,16 +1,18 @@
 """
-Scheduler: quét bookings để gửi reminder 30 phút trước giờ chơi.
+Scheduler: 
+1. Quét bookings để gửi reminder 30 phút trước giờ chơi.
+2. Tự động HỦY đơn 'Chờ xác nhận' quá 60 phút.
+3. Tự động HOÀN THÀNH đơn 'Đã xác nhận' khi qua giờ kết thúc.
 
 Chạy mỗi phút trong background (lifespan của FastAPI). 
-Đánh dấu reminder_sent=True sau khi gửi để không gửi lại.
 """
 import asyncio
-from datetime import datetime, timedelta, time as dt_time
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
-from app.core.config import BookingStatus
-from app.models import Booking, User, Field
+from app.core.config import BookingStatus, PaymentStatus
+from app.models import Booking, User, Field, Service
 from app.utils.email_service import send_email, build_reminder_email
 
 
@@ -21,12 +23,13 @@ WINDOW_MINUTES = 5
 
 
 async def reminder_loop():
-    """Background loop: quét mỗi phút và gửi reminder."""
-    print("[SCHEDULER] Reminder loop khởi động (quét mỗi 60s, gửi mail 30p trước giờ chơi)")
+    """Background loop: quét mỗi phút và xử lý các tác vụ tự động."""
+    print("[SCHEDULER] Background tasks khởi động (Quét mail, Auto-Cancel, Auto-Complete mỗi 60s)")
     while True:
         try:
             await asyncio.sleep(SCAN_INTERVAL_SECONDS)
             scan_and_send()
+            auto_clean_bookings() # Gọi thêm hàm dọn dẹp tự động
         except asyncio.CancelledError:
             print("[SCHEDULER] Reminder loop dừng")
             break
@@ -42,7 +45,6 @@ def scan_and_send():
         target_min = now + timedelta(minutes=REMINDER_MINUTES_BEFORE - WINDOW_MINUTES)
         target_max = now + timedelta(minutes=REMINDER_MINUTES_BEFORE + WINDOW_MINUTES)
 
-        # Chỉ quét bookings ngày hôm nay và ngày mai (đủ cho window 30p)
         today = now.date()
         tomorrow = today + timedelta(days=1)
 
@@ -53,12 +55,10 @@ def scan_and_send():
         ).all()
 
         for b in candidates:
-            # Ghép ngày + giờ bắt đầu thành datetime
             start_dt = datetime.combine(b.ngay_dat, b.gio_bat_dau)
             if not (target_min <= start_dt <= target_max):
                 continue
 
-            # Lấy email người nhận
             recipient_email = None
             recipient_name = None
             if b.khach_hang_id:
@@ -71,10 +71,8 @@ def scan_and_send():
                 recipient_name = b.ten_khach_vang_lai
 
             if not recipient_email:
-                # Không có email → đánh dấu sent để khỏi quét lại
                 b.reminder_sent = True
                 db.commit()
-                print(f"[REMINDER] Booking {b.ma_dat_san}: không có email, bỏ qua")
                 continue
 
             field = db.query(Field).filter(Field.id == b.san_id).first()
@@ -94,9 +92,65 @@ def scan_and_send():
                 b.reminder_sent = True
                 db.commit()
                 print(f"[REMINDER] Đã gửi cho booking {b.ma_dat_san} → {recipient_email}")
-            else:
-                # Vẫn đánh dấu để tránh spam khi SMTP fail liên tục
-                # (đã có fallback console, nên ok=True hầu như luôn xảy ra)
-                print(f"[REMINDER] Gửi thất bại cho {b.ma_dat_san}")
+    finally:
+        db.close()
+
+
+def auto_clean_bookings():
+    """Hủy booking quá 60p không thanh toán, và Hoàn thành booking qua giờ."""
+    db: Session = SessionLocal()
+    try:
+        now = datetime.now()
+        
+        # 1. AUTO-CANCEL: Hủy booking "Chờ xác nhận" đã quá 60 phút
+        sixty_mins_ago = now - timedelta(minutes=60)
+        expired_bookings = db.query(Booking).filter(
+            Booking.trang_thai == BookingStatus.CHO_XAC_NHAN,
+            Booking.ngay_tao <= sixty_mins_ago
+        ).all()
+        
+        for b in expired_bookings:
+            b.trang_thai = BookingStatus.HUY
+            b.ly_do_huy = "Tự động hủy do quá 60 phút không xác nhận thanh toán."
+            b.hoan_tien = False 
+            
+            # Hoàn lại dịch vụ (nếu có)
+            for bs in b.booking_services:
+                if bs.dich_vu:
+                    bs.dich_vu.ton_kho += bs.so_luong
+                    
+            b.ghi_chu = (b.ghi_chu or "") + f"\n[AUTO-CANCEL {now.strftime('%H:%M %d/%m/%Y')}]"
+            if b.invoice and b.invoice.trang_thai == PaymentStatus.CHUA_THANH_TOAN:
+                b.invoice.trang_thai = PaymentStatus.DA_HUY
+            print(f"[AUTO-CANCEL] Đã hủy booking {b.ma_dat_san} do quá 60p.")
+
+        # 2. AUTO-COMPLETE: Đánh dấu "Hoàn thành" booking "Đã xác nhận" qua giờ
+        past_bookings = db.query(Booking).filter(
+            Booking.trang_thai == BookingStatus.DA_XAC_NHAN,
+            Booking.ngay_dat <= now.date()
+        ).all()
+        
+        for b in past_bookings:
+            end_time_dt = datetime.combine(b.ngay_dat, b.gio_ket_thuc)
+            if end_time_dt < now:
+                b.trang_thai = BookingStatus.HOAN_THANH
+                
+                restocked = []
+                for bs in b.booking_services:
+                    svc = db.query(Service).filter(Service.id == bs.dich_vu_id).first()
+                    if svc and svc.la_cho_thue:
+                        svc.ton_kho += bs.so_luong
+                        restocked.append(f"{svc.ten_dich_vu} +{bs.so_luong}")
+                
+                note = f"[AUTO-COMPLETE {now.strftime('%H:%M %d/%m/%Y')}]"
+                if restocked:
+                    note += " Restock: " + ", ".join(restocked)
+                    
+                b.ghi_chu = (b.ghi_chu or "") + "\n" + note
+                print(f"[AUTO-COMPLETE] Đã hoàn thành booking {b.ma_dat_san}.")
+                
+        db.commit()
+    except Exception as e:
+        print(f"[AUTO-CLEAN ERROR] {e}")
     finally:
         db.close()
