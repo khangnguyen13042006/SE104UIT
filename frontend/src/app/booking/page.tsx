@@ -11,7 +11,6 @@ import {
   Star, Calendar, Sparkles
 } from "lucide-react";
 
-// Giờ bắt đầu: mỗi 30 phút từ 6:00 đến 22:00
 const START_TIMES: string[] = [];
 for (let h = 6; h <= 22; h++) {
   for (const m of [0, 30]) {
@@ -30,30 +29,11 @@ function addDuration(start: string, hours: number): string {
   return `${String(eh).padStart(2, "0")}:${String(em).padStart(2, "0")}`;
 }
 
-type Field = {
-  id: number;
-  ten_san: string;
-  loai_san: string;
-  suc_chua: number;
-  gia_tieu_chuan: number;
-  gia_cao_diem: number;
-  mo_ta: string | null;
-  trang_thai: string;
-};
-
-type Service = {
-  id: number;
-  ten_dich_vu: string;
-  don_gia: number;
-  don_vi_tinh: string;
-  ton_kho: number;
-};
-
 export default function BookingPage() {
   const router = useRouter();
-  const [fields, setFields] = useState<Field[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
-  const [activeField, setActiveField] = useState<Field | null>(null);
+  const [fields, setFields] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
+  const [activeField, setActiveField] = useState<any>(null); // Khởi tạo null
   
   const today = useMemo(() => {
     const d = new Date();
@@ -72,7 +52,7 @@ export default function BookingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState("");
   const [loadErr, setLoadErr] = useState("");
-  const [memberStatus, setMemberStatus] = useState<{ tier: string; tier_name: string; discount_percent: number } | null>(null);
+  const [memberStatus, setMemberStatus] = useState<any>(null);
 
   const dateStr = useMemo(() => {
     const y = selectedDate.getFullYear();
@@ -81,12 +61,7 @@ export default function BookingPage() {
     return `${y}-${m}-${d}`;
   }, [selectedDate]);
 
-  const isToday = useMemo(() => {
-    const now = new Date();
-    return selectedDate.getDate() === now.getDate()
-      && selectedDate.getMonth() === now.getMonth()
-      && selectedDate.getFullYear() === now.getFullYear();
-  }, [selectedDate]);
+  const isToday = useMemo(() => selectedDate.toDateString() === new Date().toDateString(), [selectedDate]);
 
   useEffect(() => {
     Promise.all([
@@ -94,289 +69,175 @@ export default function BookingPage() {
       apiGet("/api/services?trang_thai=HOAT_DONG"),
     ])
       .then(([f, s]) => {
-        setFields(f);
-        setServices(s);
-        if (f.length > 0) setActiveField(f[0]);
-        else setLoadErr("Hệ thống chưa có dữ liệu sân.");
+        setFields(Array.isArray(f) ? f : []);
+        setServices(Array.isArray(s) ? s : []);
+        if (Array.isArray(f) && f.length > 0) setActiveField(f[0]);
       })
-      .catch((e: any) => {
-        setLoadErr(e.message?.includes("Failed to fetch") ? "Không kết nối được tới backend." : `Lỗi: ${e.message}`);
-      });
+      .catch(() => setLoadErr("Lỗi kết nối máy chủ"));
 
     const u = getUser();
     if (u) {
-      apiGet("/api/memberships/me/status").then((s) => setMemberStatus({
-          tier: s.tier,
-          tier_name: s.tier_name,
-          discount_percent: s.discount_percent,
-      })).catch(() => {});
       setTenKhach(u.ho_ten || "");
       setSdtKhach(u.sdt || "");
       setEmailKhach(u.email || "");
+      apiGet("/api/memberships/me/status").then(setMemberStatus).catch(() => {});
     }
   }, []);
 
   useEffect(() => {
-    if (!activeField) return;
+    if (!activeField?.id) return; // Bảo vệ nếu activeField null
     setStartTime(null);
     apiGet(`/api/fields/${activeField.id}/schedule?ngay=${dateStr}`)
       .then((r) => {
-        const ranges = r.bookings.map((b: any) => {
-          const [sh, sm] = b.gio_bat_dau.split(":").map(Number);
-          const [eh, em] = b.gio_ket_thuc.split(":").map(Number);
-          return { s: sh * 60 + sm, e: eh * 60 + em };
-        });
-        setBookedRanges(ranges);
+        if (r?.bookings) {
+          setBookedRanges(r.bookings.map((b: any) => {
+            const [sh, sm] = b.gio_bat_dau.split(":").map(Number);
+            const [eh, em] = b.gio_ket_thuc.split(":").map(Number);
+            return { s: sh * 60 + sm, e: eh * 60 + em };
+          }));
+        }
       })
       .catch(() => setBookedRanges([]));
   }, [activeField, dateStr]);
 
-  function isSlotBooked(gbd: string, gkt: string): boolean {
-    const [sh, sm] = gbd.split(":").map(Number);
-    const [eh, em] = gkt.split(":").map(Number);
-    const s = sh * 60 + sm;
-    const e = eh * 60 + em;
-    return bookedRanges.some((b) => s < b.e && e > b.s);
-  }
-
-  function isStartAvailable(start: string, dur: number): boolean {
-    const end = addDuration(start, dur);
-    const [sh, sm] = start.split(":").map(Number);
-    const [eh, em] = end.split(":").map(Number);
-    const startMin = sh * 60 + sm;
-    const endMin = eh * 60 + em;
-
-    if (endMin > 23 * 60) return false;
-
-    // KHANG: Logic khóa giờ đã qua
+  function isStartAvailable(t: string, dur: number): boolean {
+    const [sh, sm] = t.split(":").map(Number);
+    const startM = sh * 60 + sm;
+    const endM = startM + dur * 60;
+    if (endM > 23 * 60) return false;
     if (isToday) {
       const now = new Date();
-      const currentMin = now.getHours() * 60 + now.getMinutes();
-      if (startMin <= currentMin) return false; 
+      if (startM <= (now.getHours() * 60 + now.getMinutes())) return false;
     }
-
-    return !isSlotBooked(start, end);
+    return !bookedRanges.some(b => startM < b.e && endM > b.s);
   }
-
-  function setQty(svcId: number, qty: number) {
-    setChosenSvc((c) => {
-      const n = { ...c };
-      if (qty <= 0) delete n[svcId];
-      else n[svcId] = qty;
-      return n;
-    });
-  }
-
-  const endTime = useMemo(() => startTime ? addDuration(startTime, duration) : null, [startTime, duration]);
 
   const tienSan = useMemo(() => {
-    if (!activeField || !startTime || !endTime) return 0;
+    if (!activeField || !startTime) return 0;
     const [sh, sm] = startTime.split(":").map(Number);
-    const [eh, em] = endTime.split(":").map(Number);
-    const start = sh * 60 + sm;
-    const end = eh * 60 + em;
+    const s = sh * 60 + sm;
+    const e = s + duration * 60;
     const peak = 17 * 60;
     let total = 0;
-    if (start < peak) {
-      const ne = Math.min(end, peak);
-      total += ((ne - start) / 60) * activeField.gia_tieu_chuan;
-    }
-    if (end > peak) {
-      const pb = Math.max(start, peak);
-      total += ((end - pb) / 60) * activeField.gia_cao_diem;
-    }
+    // Dùng ?. để truy cập thuộc tính an toàn
+    const giaTieuChuan = activeField?.gia_tieu_chuan || 0;
+    const giaCaoDiem = activeField?.gia_cao_diem || giaTieuChuan;
+    
+    if (s < peak) total += ((Math.min(e, peak) - s) / 60) * giaTieuChuan;
+    if (e > peak) total += ((e - Math.max(s, peak)) / 60) * giaCaoDiem;
     return total;
-  }, [activeField, startTime, endTime]);
+  }, [activeField, startTime, duration]);
 
-  const tienDV = useMemo(() => {
-    return Object.entries(chosenSvc).reduce((sum, [id, qty]) => {
-      const svc = services.find((s) => s.id === parseInt(id));
-      return sum + (svc ? svc.don_gia * qty : 0);
-    }, 0);
-  }, [chosenSvc, services]);
+  const tienDV = useMemo(() => Object.entries(chosenSvc).reduce((sum, [id, qty]) => {
+    const s = services.find(x => x.id === parseInt(id));
+    return sum + (s ? s.don_gia * qty : 0);
+  }, 0), [chosenSvc, services]);
 
-  const giamGia = useMemo(() => {
-    if (!memberStatus || memberStatus.discount_percent === 0) return 0;
-    return Math.round(tienSan * memberStatus.discount_percent / 100);
-  }, [tienSan, memberStatus]);
-
+  const giamGia = useMemo(() => memberStatus ? Math.round(tienSan * (memberStatus.discount_percent || 0) / 100) : 0, [tienSan, memberStatus]);
   const tongCong = tienSan + tienDV - giamGia;
 
   async function submit() {
-    setErr("");
-    if (!activeField) { setErr("Vui lòng chọn sân"); return; }
-    if (!startTime || !endTime) { setErr("Vui lòng chọn giờ bắt đầu"); return; }
-    if (!tenKhach.trim()) { setErr("Vui lòng nhập họ tên"); return; }
-    if (!/^0\d{9}$/.test(sdtKhach)) { setErr("SĐT phải gồm 10 số, bắt đầu bằng 0"); return; }
-
+    if (!startTime || !tenKhach || !sdtKhach || !activeField) { 
+      setErr("Vui lòng điền đủ thông tin"); 
+      return; 
+    }
     setSubmitting(true);
     try {
       const res = await apiPost("/api/bookings/guest", {
-        san_id: activeField.id,
-        ngay_dat: dateStr,
-        gio_bat_dau: startTime + ":00",
-        gio_ket_thuc: endTime + ":00",
-        ten_khach: tenKhach,
-        sdt_khach: sdtKhach,
-        email_khach: emailKhach.trim() || null,
-        services: Object.entries(chosenSvc).map(([id, qty]) => ({
-          dich_vu_id: parseInt(id), so_luong: qty,
-        })),
+        san_id: activeField.id, ngay_dat: dateStr,
+        gio_bat_dau: startTime + ":00", gio_ket_thuc: addDuration(startTime, duration) + ":00",
+        ten_khach: tenKhach, sdt_khach: sdtKhach, email_khach: emailKhach || null,
+        services: Object.entries(chosenSvc).map(([id, q]) => ({ dich_vu_id: parseInt(id), so_luong: q }))
       });
       router.push(`/payment/${res.id}`);
-    } catch (e: any) { setErr(e.message); }
-    finally { setSubmitting(false); }
+    } catch (e: any) { setErr(e.message); } finally { setSubmitting(false); }
   }
 
+  if (loadErr) return <div className="p-10 text-center text-red-500">{loadErr}</div>;
+
   return (
-    <>
+    <div className="min-h-screen bg-background font-serif">
       <Navbar />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
-            <span>Trang chủ</span><ChevronRight className="w-4 h-4" /><span>Sân bóng đá</span><ChevronRight className="w-4 h-4" /><span className="text-foreground font-medium">Đặt sân</span>
-          </div>
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <h1 className="text-3xl md:text-4xl font-display font-bold text-foreground">Đặt Sân Bóng</h1>
-                <div className="flex items-center gap-1 px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium"><Zap className="w-4 h-4" /><span>Real-time</span></div>
-              </div>
-              <div className="flex items-center gap-4 text-muted-foreground"><span className="flex items-center gap-1"><MapPin className="w-4 h-4" />TP. Hồ Chí Minh</span><span className="flex items-center gap-1"><Star className="w-4 h-4 text-accent fill-accent" />4.8/5</span></div>
-            </div>
-          </div>
-        </motion.div>
-
-        <div className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
-            {activeField && (
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} key={activeField.id} className="relative aspect-[16/9] rounded-3xl overflow-hidden border border-border shadow-lg">
-                <img src={`/fields/img-${(fields.findIndex((f) => f.id === activeField.id) % 6) + 1}.jpg`} alt={activeField.ten_san} className="absolute inset-0 w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                <div className="absolute bottom-0 left-0 right-0 p-5 text-white">
-                  <div className="font-display font-bold text-2xl mb-1 drop-shadow-lg">{activeField.ten_san}</div>
-                  <div className="text-sm opacity-90 drop-shadow">{activeField.loai_san === "SAN_5" ? "Sân 5 người" : "Sân 7 người"} · Sức chứa {activeField.suc_chua} người</div>
+      <div className="max-w-7xl mx-auto px-4 py-8 grid lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 space-y-8">
+          {/* Preview sân bóng - Chống crash bằng ?. */}
+          <section className="bg-card overflow-hidden rounded-3xl border border-border aspect-video relative">
+            {activeField ? (
+              <>
+                <img src={`/fields/img-1.jpg`} className="w-full h-full object-cover" />
+                <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent text-white">
+                  <h1 className="text-3xl font-bold">{activeField?.ten_san || "Đang tải..."}</h1>
                 </div>
-                <div className="absolute top-3 right-3 bg-white/95 rounded-xl px-3 py-1.5 text-sm font-bold text-primary shadow-lg">{formatVND(activeField.gia_tieu_chuan)}/h</div>
-              </motion.div>
+              </>
+            ) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground italic">Vui lòng chọn sân</div>
             )}
+          </section>
 
-            {/* Step 1: Chọn sân */}
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-card rounded-3xl border border-border p-6">
-              <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">1</span>Chọn sân</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {fields.map((f, idx) => (
-                  <button key={f.id} onClick={() => setActiveField(f)} className={`rounded-2xl border-2 text-left overflow-hidden transition-all duration-200 ${activeField.id === f.id ? "border-primary shadow-lg scale-[1.02]" : "border-border hover:border-primary/30"}`}>
-                    <div className="relative aspect-[4/3]"><img src={`/fields/img-${(idx % 6) + 1}.jpg`} alt={f.ten_san} className="absolute inset-0 w-full h-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" /><div className="absolute bottom-2 left-2 right-2 text-white"><div className="font-bold text-sm drop-shadow">{f.ten_san.split(" - ")[0]}</div></div></div>
-                    <div className="p-3 bg-card"><div className="text-xs text-muted-foreground mb-0.5">{f.loai_san === "SAN_5" ? "5 vs 5" : "7 vs 7"}</div><div className="text-sm font-semibold text-primary">{formatVND(f.gia_tieu_chuan)}/h</div></div>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
+          {/* 1. Chọn sân */}
+          <section className="bg-card p-6 rounded-3xl border border-border">
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Zap className="text-primary"/> 1. Chọn sân</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {fields?.map(f => (
+                <button key={f.id} onClick={() => setActiveField(f)} className={`p-2 rounded-2xl border-2 transition-all ${activeField?.id === f.id ? "border-primary bg-primary/5" : "border-transparent bg-secondary"}`}>
+                  <div className="aspect-video rounded-xl overflow-hidden mb-2"><img src={`/fields/img-1.jpg`} className="w-full h-full object-cover" /></div>
+                  <div className="font-bold text-sm">{f?.ten_san || "Sân chưa đặt tên"}</div>
+                </button>
+              ))}
+            </div>
+          </section>
 
-            {/* Step 2: KHANG - Chọn ngày & thời lượng (Gọn gàng) */}
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-card rounded-3xl border border-border p-6">
-              <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">2</span>Chọn ngày & thời lượng</h2>
-              <div className="grid md:grid-cols-2 gap-6">
-                <div>
-                  <label className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Calendar className="w-4 h-4 text-muted-foreground" /> Ngày đặt sân</label>
-                  <div className="flex flex-col gap-3">
-                    <input type="date" value={dateStr} min={today.toISOString().split("T")[0]} onChange={(e) => setSelectedDate(new Date(e.target.value))} className="w-full sm:max-w-[220px] px-4 py-2.5 rounded-xl border-2 border-input bg-background font-semibold cursor-pointer outline-none focus:border-primary transition-all" />
-                    <div className="flex flex-wrap gap-2">
-                      {[0, 1, 2, 3].map((i) => {
-                        const d = new Date(today); d.setDate(d.getDate() + i);
-                        const isSel = d.toDateString() === selectedDate.toDateString();
-                        return (
-                          <button key={i} onClick={() => setSelectedDate(d)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${isSel ? "bg-primary text-primary-foreground shadow-md" : "bg-secondary hover:bg-secondary/80 text-foreground"}`}>
-                            {i === 0 ? "Hôm nay" : i === 1 ? "Ngày mai" : `${d.getDate()}/${d.getMonth() + 1}`}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Clock className="w-4 h-4 text-muted-foreground" /> Thời lượng</label>
-                  <div className="flex flex-wrap gap-2">
-                    {DURATIONS.map((d) => (
-                      <button key={d} onClick={() => setDuration(d)} className={`min-w-[4rem] px-3 py-2.5 rounded-xl text-sm font-bold transition-all border-2 ${duration === d ? "border-primary bg-primary/10 text-primary" : "border-transparent bg-secondary text-foreground"}`}>{d === 0.5 ? "30p" : `${d}h`}</button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Step 3: Giờ bắt đầu (Có khóa giờ đã qua) */}
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-card rounded-3xl border border-border p-6">
-              <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">3</span>Chọn giờ bắt đầu</h2>
-              <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-2">
-                {START_TIMES.map((t) => {
-                  const available = isStartAvailable(t, duration);
-                  const isSelected = startTime === t;
-                  return (
-                    <button key={t} disabled={!available} onClick={() => setStartTime(t)} className={`p-3 rounded-xl text-center border-2 transition-all ${isSelected ? "bg-primary text-primary-foreground border-primary shadow-lg" : !available ? "bg-destructive/5 text-destructive/30 border-destructive/10 cursor-not-allowed" : "bg-card border-border text-foreground hover:border-primary/30"}`}>
-                      <div className="font-bold text-sm">{t}</div><div className="text-[10px] opacity-70">→ {addDuration(t, duration)}</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </motion.div>
-
-            {/* Step 4: Dịch vụ */}
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="bg-card rounded-3xl border border-border p-6">
-              <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">4</span>Dịch vụ đi kèm</h2>
-              <div className="max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {services.map((svc) => {
-                    const qty = chosenSvc[svc.id] || 0;
-                    return (
-                      <label key={svc.id} className={`flex items-center gap-4 p-4 rounded-2xl border-2 cursor-pointer transition-all ${qty > 0 ? "border-primary bg-primary/5" : "border-border hover:border-primary/30"}`}>
-                        <input type="checkbox" checked={qty > 0} onChange={(e) => setQty(svc.id, e.target.checked ? 1 : 0)} className="w-5 h-5 rounded-lg accent-primary" />
-                        <div className="flex-1"><div className="font-medium text-foreground">{svc.ten_dich_vu}</div><div className="text-sm text-muted-foreground">{formatVND(svc.don_gia)}/{svc.don_vi_tinh}</div></div>
-                        {qty > 0 && <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}><button onClick={() => setQty(svc.id, qty - 1)} className="w-8 h-8 rounded-lg bg-secondary font-bold">−</button><span className="w-8 text-center font-bold">{qty}</span><button onClick={() => setQty(svc.id, qty + 1)} className="w-8 h-8 rounded-lg bg-secondary font-bold">+</button></div>}
-                      </label>
-                    );
+          {/* 2. Ngày & Thời lượng */}
+          <section className="bg-card p-6 rounded-3xl border border-border">
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Calendar className="text-primary"/> 2. Thời gian</h2>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <input type="date" value={dateStr} min={today.toISOString().split("T")[0]} onChange={(e) => setSelectedDate(new Date(e.target.value))} className="w-full p-3 rounded-xl border-2 border-input bg-background font-bold" />
+                <div className="flex flex-wrap gap-2">
+                  {[0,1,2,3].map(i => {
+                    const d = new Date(today); d.setDate(d.getDate()+i);
+                    return <button key={i} onClick={() => setSelectedDate(d)} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${selectedDate.toDateString() === d.toDateString() ? "bg-primary text-white" : "bg-secondary"}`}>{i===0?"Hôm nay":i===1?"Ngày mai":`${d.getDate()}/${d.getMonth()+1}`}</button>
                   })}
                 </div>
               </div>
-            </motion.div>
+              <div className="flex flex-wrap gap-2 h-fit">
+                {DURATIONS.map(d => <button key={d} onClick={() => setDuration(d)} className={`px-4 py-2 rounded-xl border-2 font-bold ${duration===d?"border-primary bg-primary/10 text-primary":"border-transparent bg-secondary"}`}>{d}h</button>)}
+              </div>
+            </div>
+          </section>
 
-            {/* Step 5: Thông tin */}
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="bg-card rounded-3xl border border-border p-6">
-              <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">5</span>Thông tin liên hệ</h2>
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div><label className="text-sm font-semibold mb-2 flex items-center gap-2"><User className="w-4 h-4" /> Họ tên <span className="text-destructive">*</span></label><input value={tenKhach} onChange={(e) => setTenKhach(e.target.value)} placeholder="Nguyễn Văn A" className="w-full px-4 py-3 rounded-xl border border-input bg-background focus:border-primary outline-none transition-all" /></div>
-                <div><label className="text-sm font-semibold mb-2 flex items-center gap-2"><Phone className="w-4 h-4" /> Số điện thoại <span className="text-destructive">*</span></label><input value={sdtKhach} onChange={(e) => setSdtKhach(e.target.value)} placeholder="0901234567" maxLength={10} className="w-full px-4 py-3 rounded-xl border border-input bg-background focus:border-primary outline-none transition-all" /></div>
-                <div className="sm:col-span-2"><label className="text-sm font-semibold mb-2 flex items-center gap-2"><Mail className="w-4 h-4" /> Email</label><input value={emailKhach} onChange={(e) => setEmailKhach(e.target.value)} placeholder="ban@email.com" type="email" className="w-full px-4 py-3 rounded-xl border border-input bg-background focus:border-primary outline-none transition-all" /></div>
-              </div>
-            </motion.div>
-          </div>
-
-          <div className="lg:col-span-1">
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="sticky top-24 bg-card rounded-3xl border border-border p-6">
-              <h3 className="text-lg font-display font-bold text-foreground mb-4">Tóm tắt đặt sân</h3>
-              <div className="p-4 rounded-2xl bg-secondary/50 mb-4"><div className="flex items-center gap-3 mb-2"><span className="text-3xl">⚽</span><div><div className="font-bold text-foreground">{activeField.ten_san}</div><div className="text-sm text-muted-foreground">{activeField.loai_san === "SAN_5" ? "Sân 5 người" : "Sân 7 người"}</div></div></div></div>
-              <div className="space-y-3 mb-6">
-                <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground flex items-center gap-2"><Calendar className="w-4 h-4" /> Ngày</span><span className="font-medium text-foreground">{selectedDate.toLocaleDateString("vi-VN")}</span></div>
-                <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground flex items-center gap-2"><Clock className="w-4 h-4" /> Thời gian</span><span className="font-medium text-foreground">{startTime ? `${startTime} - ${endTime}` : "Chưa chọn"}</span></div>
-                <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground flex items-center gap-2"><Users className="w-4 h-4" /> Thời lượng</span><span className="font-medium text-foreground">{duration === 0.5 ? "30 phút" : `${duration} giờ`}</span></div>
-              </div>
-              {memberStatus && memberStatus.discount_percent > 0 && (
-                <div className="border-t border-border pt-4 mb-2"><div className="flex items-center gap-2 p-3 rounded-xl bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/20"><Sparkles className="w-4 h-4 text-primary shrink-0" /><div className="flex-1 text-xs"><div className="font-semibold text-foreground">Thẻ {memberStatus.tier_name}</div><div className="text-muted-foreground">Tự động giảm {memberStatus.discount_percent}% tiền sân</div></div></div></div>
-              )}
-              <div className="border-t border-border pt-4 space-y-2">
-                <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Tiền sân</span><span className="font-medium text-foreground">{formatVND(tienSan)}</span></div>
-                {tienDV > 0 && <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Dịch vụ</span><span className="font-medium text-foreground">{formatVND(tienDV)}</span></div>}
-                {giamGia > 0 && <div className="flex items-center justify-between text-sm"><span className="text-primary flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> Giảm thẻ {memberStatus?.tier_name}</span><span className="font-semibold text-primary">−{formatVND(giamGia)}</span></div>}
-                <div className="flex items-center justify-between pt-2 border-t border-border"><span className="font-bold text-foreground">Tổng cộng</span><span className="text-2xl font-display font-bold text-primary">{formatVND(tongCong)}</span></div>
-              </div>
-              <AnimatePresence>{err && <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="mt-4 p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm">{err}</motion.div>}</AnimatePresence>
-              <button onClick={submit} disabled={submitting || !startTime} className="w-full mt-6 py-4 bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl font-semibold shadow-lg shadow-primary/25 disabled:opacity-50 transition-all flex items-center justify-center gap-2">{submitting ? <><Loader2 className="w-5 h-5 animate-spin" /><span>Đang xử lý...</span></> : <><CheckCircle2 className="w-5 h-5" /><span>Đặt sân ngay</span></>}</button>
-              <div className="mt-4 flex items-center gap-3 p-3 rounded-xl bg-accent/10 border border-accent/20"><Wifi className="w-5 h-5 text-accent shrink-0" /><p className="text-xs text-muted-foreground">Wifi miễn phí, bãi đỗ xe, căng tin</p></div>
-            </motion.div>
-          </div>
+          {/* 3. Giờ bắt đầu */}
+          <section className="bg-card p-6 rounded-3xl border border-border">
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Clock className="text-primary"/> 3. Giờ bắt đầu</h2>
+            <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
+              {START_TIMES.map(t => {
+                const ok = isStartAvailable(t, duration);
+                return <button key={t} disabled={!ok} onClick={() => setStartTime(t)} className={`p-2 rounded-xl border-2 font-bold text-sm ${startTime===t?"bg-primary text-white border-primary":!ok?"opacity-20 cursor-not-allowed":"bg-secondary border-transparent"}`}>{t}</button>
+              })}
+            </div>
+          </section>
         </div>
+
+        {/* Sidebar Tóm tắt - Nơi dễ sập nhất */}
+        <aside className="space-y-6">
+          <div className="sticky top-24 bg-card p-6 rounded-3xl border border-border shadow-xl">
+            <h3 className="text-xl font-bold mb-6">Tóm tắt đơn đặt</h3>
+            <div className="space-y-4 border-b pb-6 mb-6 text-sm">
+              {/* Dùng ?.ten_san và fallback "Chưa chọn sân" */}
+              <div className="flex justify-between"><span>Sân:</span><span className="font-bold">{activeField?.ten_san || "Chưa chọn sân"}</span></div>
+              <div className="flex justify-between"><span>Ngày:</span><span className="font-bold">{selectedDate.toLocaleDateString("vi-VN")}</span></div>
+              <div className="flex justify-between"><span>Giờ:</span><span className="font-bold text-primary">{startTime ? `${startTime} - ${addDuration(startTime, duration)}` : "Chưa chọn"}</span></div>
+            </div>
+            <div className="space-y-3 mb-8">
+              <div className="flex justify-between text-lg font-bold"><span>Tổng cộng:</span><span className="text-primary">{formatVND(tongCong)}</span></div>
+            </div>
+            {err && <div className="p-3 bg-red-100 text-red-600 rounded-xl text-xs mb-4">{err}</div>}
+            <button onClick={submit} disabled={submitting || !startTime} className="w-full py-4 bg-primary text-white rounded-2xl font-bold shadow-lg hover:bg-primary/90 disabled:opacity-50 transition-all flex justify-center gap-2">
+              {submitting ? <Loader2 className="animate-spin"/> : <CheckCircle2/>} {submitting ? "Đang xử lý..." : "Đặt sân ngay"}
+            </button>
+          </div>
+        </aside>
       </div>
-    </>
+    </div>
   );
 }
