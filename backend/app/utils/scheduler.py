@@ -55,7 +55,8 @@ def auto_clean_bookings():
                     
             b.ghi_chu = (b.ghi_chu or "") + f"\n[AUTO-CANCEL {now.strftime('%H:%M %d/%m/%Y')}]"
             if b.invoice and b.invoice.trang_thai == PaymentStatus.CHUA_THANH_TOAN:
-                b.invoice.trang_thai = PaymentStatus.DA_HUY
+    # Sửa DA_HUY thành HUY (hoặc trạng thái tương ứng trong config.py của bạn)
+    b.invoice.trang_thai = PaymentStatus.HUY
             print(f"[AUTO-CANCEL] Đã hủy booking {b.ma_dat_san} do quá 60p.")
 
         # 2. AUTO-COMPLETE: Đánh dấu 'Hoàn thành' khi qua giờ kết thúc
