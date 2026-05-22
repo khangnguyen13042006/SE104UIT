@@ -87,8 +87,10 @@ def create_booking(
         raise HTTPException(400, "Sân hiện không hoạt động")
 
     # 2) Validate date/time
-    if payload.ngay_dat < date.today():
-        raise HTTPException(400, "Không thể đặt ngày trong quá khứ")
+    if payload.ngay_dat == date.today():
+        now_vn = datetime.utcnow() + timedelta(hours=7)
+        if payload.gio_bat_dau <= now_vn.time():
+            raise HTTPException(400, "Khung giờ này đã trôi qua so với thời gian thực.")
     ok, msg = is_valid_booking_time(payload.gio_bat_dau, payload.gio_ket_thuc)
     if not ok:
         raise HTTPException(400, msg)
