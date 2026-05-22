@@ -134,9 +134,21 @@ export default function BookingPage() {
 
   function isStartAvailable(start: string, dur: number): boolean {
     const end = addDuration(start, dur);
-    const [eh] = end.split(":").map(Number);
-    const endMin = eh * 60 + parseInt(end.split(":")[1]);
-    if (endMin > 23 * 60) return false;
+    const [sh, sm] = start.split(":").map(Number);
+    const startTotalMin = sh * 60 + sm;
+
+    const [eh, em] = end.split(":").map(Number);
+    if (eh * 60 + em > 23 * 60) return false;
+
+  // --- CHỖ THAY ĐỔI ĐÂY ---
+      const now = new Date();
+    const isToday = selectedDate.toDateString() === now.toDateString();
+  
+    if (isToday) {
+      const currentTotalMin = now.getHours() * 60 + now.getMinutes();
+    // Nếu giờ bắt đầu ca nhỏ hơn hoặc bằng giờ hiện tại -> chặn không cho đặt
+      if (startTotalMin <= currentTotalMin) return false;
+    }
     return !isSlotBooked(start, end);
   }
 
