@@ -5,13 +5,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Load .env nếu có
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
-
 from app.core.database import Base, engine
 from app.routers import (
     auth, users, fields, bookings, services,
@@ -21,37 +14,36 @@ from app.utils.scheduler import reminder_loop
 
 logger = logging.getLogger("uvicorn.error")
 
-
 def init_database():
-    """Tạo tables nếu chưa có. Chạy 1 lần lúc startup, không crash app nếu DB tạm thời không sẵn sàng."""
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("✅ Database tables initialized")
     except Exception as e:
-        logger.error(f"⚠️  Database init failed (will retry on first request): {e}")
-
+        logger.error(f"⚠️  Database init failed: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # --- Startup ---
     init_database()
-    task = asyncio.create_task(reminder_loop())
-    logger.info("🚀 App started")
+    # Khởi động tác vụ chạy ngầm của Scheduler
+    scheduler_task = asyncio.create_task(reminder_loop())
+    logger.info("🚀 App started - Background Scheduler is active")
+    
     yield
-    # Shutdown
-    task.cancel()
+    
+    # --- Shutdown ---
+    scheduler_task.cancel()
     try:
-        await task
+        await scheduler_task
     except asyncio.CancelledError:
         pass
 
-
 app = FastAPI(
     title="Sân Bóng API",
-    description="API quản lý đặt lịch và vận hành sân bóng",
     version="1.2.0",
     lifespan=lifespan,
 )
+
 
 # ============ CORS ============
 # Đọc danh sách origins từ env var ALLOWED_ORIGINS (comma-separated)
