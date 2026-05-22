@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { apiGet, formatDateTime } from "@/lib/api";
-import { Star, Loader2, AlertTriangle, MessageSquare, TrendingUp, Filter, ArrowUpDown, Search, Calendar, RotateCcw } from "lucide-react";
+import { Star, Loader2, AlertTriangle, MessageSquare, TrendingUp, Filter, ArrowUpDown } from "lucide-react";
 
 type SortOption = "newest" | "oldest" | "highest" | "lowest";
 
@@ -12,11 +12,6 @@ export default function FeedbacksAdmin() {
   const [starFilter, setStarFilter] = useState<string>("");  // "", "1", "2", "3", "4", "5"
   const [sort, setSort] = useState<SortOption>("newest");
   const [loading, setLoading] = useState(true);
-
-  // --- BỔ SUNG BỘ LỌC MỚI ---
-  const [keyword, setKeyword] = useState("");
-  const [tuNgay, setTuNgay] = useState<string>("");
-  const [denNgay, setDenNgay] = useState<string>("");
 
   async function load() {
     setLoading(true);
@@ -38,38 +33,17 @@ export default function FeedbacksAdmin() {
   }
   useEffect(() => { load(); }, [starFilter]);
 
-  // --- LOGIC LỌC & SẮP XẾP TỔNG HỢP ---
-  const filteredAndSorted = useMemo(() => {
-    let result = list.filter(f => {
-      // 1. Lọc theo từ khóa (Tên khách, sân, nhận xét)
-      const matchKeyword = 
-        f.ten_khach?.toLowerCase().includes(keyword.toLowerCase()) || 
-        f.ten_san?.toLowerCase().includes(keyword.toLowerCase()) ||
-        f.nhan_xet?.toLowerCase().includes(keyword.toLowerCase());
-      
-      // 2. Lọc theo ngày tháng
-      let matchDate = true;
-      if (tuNgay || denNgay) {
-        const d = new Date(f.ngay_tao).getTime();
-        if (tuNgay) matchDate = matchDate && d >= new Date(tuNgay).getTime();
-        if (denNgay) {
-          const end = new Date(denNgay);
-          end.setHours(23, 59, 59);
-          matchDate = matchDate && d <= end.getTime();
-        }
-      }
-      return matchKeyword && matchDate;
-    });
-
-    // 3. Sắp xếp
+  // Client-side sort
+  const sorted = useMemo(() => {
+    const arr = [...list];
     switch (sort) {
-      case "newest": result.sort((a, b) => new Date(b.ngay_tao).getTime() - new Date(a.ngay_tao).getTime()); break;
-      case "oldest": result.sort((a, b) => new Date(a.ngay_tao).getTime() - new Date(b.ngay_tao).getTime()); break;
-      case "highest": result.sort((a, b) => b.danh_gia_tong - a.danh_gia_tong || new Date(b.ngay_tao).getTime() - new Date(a.ngay_tao).getTime()); break;
-      case "lowest": result.sort((a, b) => a.danh_gia_tong - b.danh_gia_tong || new Date(b.ngay_tao).getTime() - new Date(a.ngay_tao).getTime()); break;
+      case "newest": arr.sort((a, b) => new Date(b.ngay_tao).getTime() - new Date(a.ngay_tao).getTime()); break;
+      case "oldest": arr.sort((a, b) => new Date(a.ngay_tao).getTime() - new Date(b.ngay_tao).getTime()); break;
+      case "highest": arr.sort((a, b) => b.danh_gia_tong - a.danh_gia_tong || new Date(b.ngay_tao).getTime() - new Date(a.ngay_tao).getTime()); break;
+      case "lowest": arr.sort((a, b) => a.danh_gia_tong - b.danh_gia_tong || new Date(b.ngay_tao).getTime() - new Date(a.ngay_tao).getTime()); break;
     }
-    return result;
-  }, [list, sort, keyword, tuNgay, denNgay]);
+    return arr;
+  }, [list, sort]);
 
   return (
     <div className="space-y-6">
@@ -96,40 +70,21 @@ export default function FeedbacksAdmin() {
       {/* Filters */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
         className="bg-card rounded-3xl border border-border p-5 space-y-4">
-        
-        {/* --- PHẦN TÌM KIẾM & NGÀY THÁNG MỚI --- */}
-        <div className="flex gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-[260px]">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input 
-              value={keyword} 
-              onChange={(e) => setKeyword(e.target.value)}
-              placeholder="Tìm khách, sân, nội dung..."
-              className="w-full pl-11 pr-4 py-2.5 rounded-2xl border border-input bg-background text-sm outline-none focus:border-primary transition-all" 
-            />
-          </div>
-          <div className="flex items-center gap-2 bg-background border border-input rounded-2xl px-3 py-1">
-            <Calendar className="w-4 h-4 text-muted-foreground" />
-            <input type="date" value={tuNgay} onChange={e => setTuNgay(e.target.value)} className="bg-transparent text-xs outline-none focus:text-primary" />
-            <span className="text-muted-foreground">-</span>
-            <input type="date" value={denNgay} onChange={e => setDenNgay(e.target.value)} className="bg-transparent text-xs outline-none focus:text-primary" />
-          </div>
-          <button onClick={() => { setKeyword(""); setTuNgay(""); setDenNgay(""); setStarFilter(""); }} className="p-2.5 rounded-2xl bg-secondary hover:bg-secondary/80 transition-colors">
-            <RotateCcw className="w-4 h-4" />
-          </button>
-        </div>
-
         {/* Star filter */}
-        <div className="pt-3 border-t border-border">
+        <div>
           <div className="flex items-center gap-2 mb-2">
             <Filter className="w-4 h-4 text-muted-foreground" />
             <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Lọc theo số sao</span>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <FilterChip active={!starFilter} onClick={() => setStarFilter("")}>Tất cả</FilterChip>
+            <FilterChip active={!starFilter} onClick={() => setStarFilter("")}>
+              Tất cả
+            </FilterChip>
             {[5, 4, 3, 2, 1].map((n) => (
               <FilterChip key={n} active={starFilter === String(n)} onClick={() => setStarFilter(String(n))}>
-                <span className="flex items-center gap-1">{n}<Star className="w-3 h-3 fill-current" /></span>
+                <span className="flex items-center gap-1">
+                  {n}<Star className="w-3 h-3 fill-current" />
+                </span>
               </FilterChip>
             ))}
           </div>
@@ -150,28 +105,28 @@ export default function FeedbacksAdmin() {
         </div>
 
         <div className="pt-3 border-t border-border text-sm text-muted-foreground">
-          Hiển thị <strong className="text-foreground">{filteredAndSorted.length}</strong> đánh giá
+          Hiển thị <strong className="text-foreground">{sorted.length}</strong> đánh giá
+          {starFilter && ` với ${starFilter}★`}
         </div>
       </motion.div>
 
       {/* List */}
       {loading ? (
         <div className="p-16 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" /></div>
-      ) : filteredAndSorted.length === 0 ? (
+      ) : sorted.length === 0 ? (
         <div className="bg-card rounded-3xl p-16 text-center border border-border">
           <MessageSquare className="w-16 h-16 mx-auto mb-4 text-muted-foreground/30" />
-          <p className="text-muted-foreground">Không có đánh giá nào khớp bộ lọc</p>
+          <p className="text-muted-foreground">Không có đánh giá nào{starFilter ? ` với ${starFilter}★` : ""}</p>
         </div>
       ) : (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="space-y-3">
-          {filteredAndSorted.map((f, i) => <FeedbackItem key={f.id} f={f} delay={i * 0.03} />)}
+          {sorted.map((f, i) => <FeedbackItem key={f.id} f={f} delay={i * 0.03} />)}
         </motion.div>
       )}
     </div>
   );
 }
 
-// --- GIỮ NGUYÊN CÁC COMPONENT CON ---
 function FilterChip({ active, onClick, children }: any) {
   return (
     <button onClick={onClick}
@@ -187,8 +142,8 @@ function FilterChip({ active, onClick, children }: any) {
 
 function StatCard({ icon, label, value, color }: any) {
   return (
-    <div className="bg-card rounded-3xl border border-border p-5 shadow-sm">
-      <div className={`w-10 h-10 rounded-2xl bg-gradient-to-br ${color} flex items-center justify-center mb-3 text-white shadow-inner`}>
+    <div className="bg-card rounded-3xl border border-border p-5">
+      <div className={`w-10 h-10 rounded-2xl bg-gradient-to-br ${color} flex items-center justify-center mb-3 text-white`}>
         {icon}
       </div>
       <div className="text-xs text-muted-foreground mb-1">{label}</div>
