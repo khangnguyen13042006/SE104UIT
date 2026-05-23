@@ -20,7 +20,6 @@ export default function BookingsAdmin() {
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
-  // Đặt mặc định là ALL để không bị ẩn đơn sau khi hệ thống tự động quét
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [billTarget, setBillTarget] = useState<any>(null);
   const [cancelTarget, setCancelTarget] = useState<any>(null);
@@ -29,7 +28,6 @@ export default function BookingsAdmin() {
   async function load() {
     setLoading(true);
     try {
-      // Kích hoạt dọn dẹp tự động trên server mỗi khi load lại trang
       await apiPost("/api/bookings/run-auto-tasks", {});
       const data = await apiGet("/api/bookings");
       setList(Array.isArray(data) ? data : []);
@@ -40,7 +38,6 @@ export default function BookingsAdmin() {
 
   useEffect(() => { load(); }, []);
 
-  // Logic lọc dữ liệu: Đảm bảo hiện đủ đơn khi chọn "ALL"
   const filtered = list.filter(b => {
     const matchSearch = 
       b.ten_khach?.toLowerCase().includes(keyword.toLowerCase()) || 
@@ -49,7 +46,6 @@ export default function BookingsAdmin() {
     return matchSearch && matchStatus;
   });
 
-  // --- Hàm xử lý nghiệp vụ ---
   async function confirmBooking(id: number) {
     if (!confirm("Xác nhận đơn đặt sân này?")) return;
     try {
@@ -86,7 +82,6 @@ export default function BookingsAdmin() {
         </button>
       </div>
 
-      {/* Bộ lọc nâng cao */}
       <div className="flex flex-wrap gap-3 bg-card p-4 rounded-3xl border border-border shadow-sm">
         <div className="relative flex-1 min-w-[280px]">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -111,7 +106,6 @@ export default function BookingsAdmin() {
         </select>
       </div>
 
-      {/* Danh sách Table */}
       {loading ? (
         <div className="flex justify-center py-20"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>
       ) : (
@@ -122,6 +116,8 @@ export default function BookingsAdmin() {
                 <tr>
                   <th className="p-5">Mã đơn / Khách</th>
                   <th className="p-5">Thời gian đá</th>
+                  {/* CỘT MỚI THÊM VÀO ĐÂY */}
+                  <th className="p-5">Thời điểm đặt</th> 
                   <th className="p-5 text-right">Tổng tiền</th>
                   <th className="p-5 text-center">Trạng thái</th>
                   <th className="p-5 text-right">Thao tác</th>
@@ -138,6 +134,17 @@ export default function BookingsAdmin() {
                       <div className="text-sm font-bold">{formatDate(b.ngay_dat)}</div>
                       <div className="text-[11px] font-mono opacity-60 flex items-center gap-1 mt-0.5">
                         <Clock size={12}/> {b.gio_bat_dau?.slice(0,5)} - {b.gio_ket_thuc?.slice(0,5)}
+                      </div>
+                    </td>
+                    {/* NỘI DUNG CỘT MỚI: HIỂN THỊ NGÀY GIỜ NHẤN NÚT ĐẶT */}
+                    <td className="p-5">
+                      <div className="text-xs font-bold text-muted-foreground">
+                        {b.ngay_tao ? new Date(b.ngay_tao).toLocaleString('vi-VN', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          day: '2-digit',
+                          month: '2-digit'
+                        }) : "N/A"}
                       </div>
                     </td>
                     <td className="p-5 text-right">
@@ -180,7 +187,6 @@ export default function BookingsAdmin() {
         </div>
       )}
 
-      {/* --- Modals (Bill & Hủy) --- */}
       <AnimatePresence>
         {billTarget && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
