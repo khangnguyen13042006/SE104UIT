@@ -138,15 +138,23 @@ export default function BookingsAdmin() {
                     </td>
                     {/* NỘI DUNG CỘT MỚI: HIỂN THỊ NGÀY GIỜ NHẤN NÚT ĐẶT */}
                     <td className="p-5">
-                      <div className="text-xs font-bold text-muted-foreground">
-                        {b.ngay_tao ? new Date(b.ngay_tao).toLocaleString('vi-VN', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          day: '2-digit',
-                          month: '2-digit'
-                        }) : "N/A"}
-                      </div>
-                    </td>
+  <div className="text-xs font-bold text-muted-foreground">
+    {b.ngay_tao ? (
+      (() => {
+        const d = new Date(b.ngay_tao);
+        d.setHours(d.getHours() + 7); // Cộng thủ công 7 tiếng bị thiếu
+        return d.toLocaleString('vi-VN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour12: false
+        });
+      })()
+    ) : "N/A"}
+  </div>
+</td>
                     <td className="p-5 text-right">
                       <div className="font-black text-foreground">
                         {formatVND(b.invoice?.tong_cong || b.tien_san)}
