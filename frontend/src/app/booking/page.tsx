@@ -300,20 +300,42 @@ export default function BookingPage() {
             </motion.div>
 
             {/* Step 3: Chọn giờ bắt đầu */}
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-card rounded-3xl border border-border p-6">
-              <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">3</span>Chọn giờ bắt đầu</h2>
-              <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-2">
-                {START_TIMES.map((t) => {
-                  const available = isStartAvailable(t, duration);
-                  const isSelected = startTime === t;
-                  return (
-                    <button key={t} disabled={!available} onClick={() => setStartTime(t)} className={`p-3 rounded-xl text-center border-2 transition-all ${isSelected ? "bg-primary text-primary-foreground border-primary shadow-lg" : !available ? "bg-destructive/5 text-destructive/30 border-destructive/10 cursor-not-allowed" : "bg-card border-border text-foreground hover:border-primary/30"}`}>
-                      <div className="font-bold text-sm">{t}</div><div className="text-[10px] opacity-70">→ {addDuration(t, duration)}</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </motion.div>
+<motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-card rounded-3xl border border-border p-6">
+  <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2">
+    <span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">3</span>
+    Chọn giờ bắt đầu
+  </h2>
+  <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-2">
+    {START_TIMES.map((t) => {
+      const available = isStartAvailable(t, duration);
+      const isSelected = startTime === t;
+      
+      // LOGIC TÔ VÀNG GIỜ CAO ĐIỂM
+      const hour = parseInt(t.split(":")[0]);
+      const isPeak = hour >= 18 && hour < 21;
+
+      return (
+        <button 
+          key={t} 
+          disabled={!available} 
+          onClick={() => setStartTime(t)} 
+          className={`p-3 rounded-xl text-center border-2 transition-all ${
+            isSelected 
+              ? "bg-primary text-primary-foreground border-primary shadow-lg" 
+              : !available 
+                ? "bg-destructive/5 text-destructive/30 border-destructive/10 cursor-not-allowed" 
+                : isPeak
+                  ? "bg-amber-100 border-amber-400 text-amber-900 hover:bg-amber-200" // Tô vàng khung giờ cao điểm
+                  : "bg-card border-border text-foreground hover:border-primary/30"
+          }`}
+        >
+          <div className="font-bold text-sm">{t}</div>
+          <div className="text-[10px] opacity-70">→ {addDuration(t, duration)}</div>
+        </button>
+      );
+    })}
+  </div>
+</motion.div>
 
             {/* Step 4: Dịch vụ đi kèm */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="bg-card rounded-3xl border border-border p-6">
@@ -345,7 +367,7 @@ export default function BookingPage() {
             </motion.div>
           </div>
 
-          {/* Sidebar - Tóm tắt và Tính tiền */}
+         {/* Sidebar - Tóm tắt và Tính tiền */}
           <div className="lg:col-span-1">
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="sticky top-24 bg-card rounded-3xl border border-border p-6 shadow-xl">
               <h3 className="text-lg font-display font-bold text-foreground mb-4">Tóm tắt đơn đặt</h3>
@@ -373,9 +395,35 @@ export default function BookingPage() {
               )}
 
               <div className="border-t border-border pt-4 space-y-2">
-                <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Tiền sân</span><span className="font-medium">{formatVND(tienSan)}</span></div>
-                {tienDV > 0 && <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Dịch vụ</span><span className="font-medium">{formatVND(tienDV)}</span></div>}
-                {giamGia > 0 && <div className="flex items-center justify-between text-sm"><span className="text-primary flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> Giảm giá thẻ</span><span className="font-semibold text-primary">−{formatVND(giamGia)}</span></div>}
+                {/* HIỂN THỊ CHI TIẾT TIỀN SÂN */}
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Tiền sân</span>
+                    <span className="font-medium">
+                      {formatVND(activeField.gia_thue)}/h x {duration}h
+                    </span>
+                  </div>
+                  <div className="text-right text-sm font-bold text-foreground">{formatVND(tienSan)}</div>
+                </div>
+
+                {/* HIỂN THỊ CHI TIẾT DỊCH VỤ */}
+                {selectedServices.length > 0 && (
+                  <div className="pt-2 space-y-2">
+                    <span className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Dịch vụ đã chọn</span>
+                    {selectedServices.map((s) => (
+                      <div key={s.id} className="flex flex-col gap-0.5 border-l-2 border-primary/20 pl-3 py-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="font-medium">{s.ten_dich_vu}</span>
+                          <span>{formatVND(s.gia)} x {s.quantity}</span>
+                        </div>
+                        <div className="text-right text-xs font-bold">{formatVND(s.gia * s.quantity)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {giamGia > 0 && <div className="flex items-center justify-between text-sm pt-2"><span className="text-primary flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> Giảm giá thẻ</span><span className="font-semibold text-primary">−{formatVND(giamGia)}</span></div>}
+                
                 <div className="flex items-center justify-between pt-2 border-t border-border mt-2"><span className="font-bold">Tổng cộng</span><span className="text-2xl font-display font-bold text-primary">{formatVND(tongCong)}</span></div>
               </div>
 
@@ -387,8 +435,3 @@ export default function BookingPage() {
               <div className="mt-4 flex items-center gap-3 p-3 rounded-xl bg-accent/10 border border-accent/20"><Wifi className="w-5 h-5 text-accent" /><p className="text-[10px] text-muted-foreground">Hỗ trợ: Wifi, bãi đỗ xe, nước uống miễn phí.</p></div>
             </motion.div>
           </div>
-        </div>
-      </div>
-    </>
-  );
-}
