@@ -11,7 +11,6 @@ import {
   Star, Calendar, Sparkles
 } from "lucide-react";
 
-// Giờ bắt đầu: mỗi 30 phút từ 6:00 đến 22:00
 const START_TIMES: string[] = [];
 for (let h = 6; h <= 22; h++) {
   for (const m of [0, 30]) {
@@ -140,13 +139,11 @@ export default function BookingPage() {
     const [eh, em] = end.split(":").map(Number);
     if (eh * 60 + em > 23 * 60) return false;
 
-  // --- CHỖ THAY ĐỔI ĐÂY ---
-      const now = new Date();
+    const now = new Date();
     const isToday = selectedDate.toDateString() === now.toDateString();
   
     if (isToday) {
       const currentTotalMin = now.getHours() * 60 + now.getMinutes();
-    // Nếu giờ bắt đầu ca nhỏ hơn hoặc bằng giờ hiện tại -> chặn không cho đặt
       if (startTotalMin <= currentTotalMin) return false;
     }
     return !isSlotBooked(start, end);
@@ -246,7 +243,6 @@ export default function BookingPage() {
 
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
-            {/* Field Image Preview */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} key={activeField.id} className="relative aspect-[16/9] rounded-3xl overflow-hidden border border-border shadow-lg">
               <img src={`/fields/img-${(fields.findIndex((f) => f.id === activeField.id) % 6) + 1}.jpg`} alt={activeField.ten_san} className="absolute inset-0 w-full h-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
@@ -257,7 +253,6 @@ export default function BookingPage() {
               <div className="absolute top-3 right-3 bg-white/95 rounded-xl px-3 py-1.5 text-sm font-bold text-primary shadow-lg">{formatVND(activeField.gia_tieu_chuan)}/h</div>
             </motion.div>
 
-            {/* Step 1: Chọn sân */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-card rounded-3xl border border-border p-6">
               <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">1</span>Chọn sân</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -270,7 +265,6 @@ export default function BookingPage() {
               </div>
             </motion.div>
 
-            {/* Step 2: Chọn ngày & thời lượng (GỌN GÀNG NHƯ HÌNH KHANG GỬI) */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-card rounded-3xl border border-border p-6">
               <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">2</span>Chọn ngày & thời lượng</h2>
               <div className="grid md:grid-cols-2 gap-6">
@@ -299,45 +293,26 @@ export default function BookingPage() {
               </div>
             </motion.div>
 
-            {/* Step 3: Chọn giờ bắt đầu */}
-<motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-card rounded-3xl border border-border p-6">
-  <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2">
-    <span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">3</span>
-    Chọn giờ bắt đầu
-  </h2>
-  <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-2">
-    {START_TIMES.map((t) => {
-      const available = isStartAvailable(t, duration);
-      const isSelected = startTime === t;
-      
-      // LOGIC TÔ VÀNG GIỜ CAO ĐIỂM
-      const hour = parseInt(t.split(":")[0]);
-      const isPeak = hour >= 18 && hour < 21;
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-card rounded-3xl border border-border p-6">
+              <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">3</span>
+                Chọn giờ bắt đầu
+              </h2>
+              <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-2">
+                {START_TIMES.map((t) => {
+                  const available = isStartAvailable(t, duration);
+                  const isSelected = startTime === t;
+                  const hour = parseInt(t.split(":")[0]);
+                  const isPeak = hour >= 18 && hour < 21;
+                  return (
+                    <button key={t} disabled={!available} onClick={() => setStartTime(t)} className={`p-3 rounded-xl text-center border-2 transition-all ${isSelected ? "bg-primary text-primary-foreground border-primary shadow-lg" : !available ? "bg-destructive/5 text-destructive/30 border-destructive/10 cursor-not-allowed" : isPeak ? "bg-amber-100 border-amber-400 text-amber-900 hover:bg-amber-200" : "bg-card border-border text-foreground hover:border-primary/30"}`}>
+                      <div className="font-bold text-sm">{t}</div><div className="text-[10px] opacity-70">→ {addDuration(t, duration)}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
 
-      return (
-        <button 
-          key={t} 
-          disabled={!available} 
-          onClick={() => setStartTime(t)} 
-          className={`p-3 rounded-xl text-center border-2 transition-all ${
-            isSelected 
-              ? "bg-primary text-primary-foreground border-primary shadow-lg" 
-              : !available 
-                ? "bg-destructive/5 text-destructive/30 border-destructive/10 cursor-not-allowed" 
-                : isPeak
-                  ? "bg-amber-100 border-amber-400 text-amber-900 hover:bg-amber-200" // Tô vàng khung giờ cao điểm
-                  : "bg-card border-border text-foreground hover:border-primary/30"
-          }`}
-        >
-          <div className="font-bold text-sm">{t}</div>
-          <div className="text-[10px] opacity-70">→ {addDuration(t, duration)}</div>
-        </button>
-      );
-    })}
-  </div>
-</motion.div>
-
-            {/* Step 4: Dịch vụ đi kèm */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="bg-card rounded-3xl border border-border p-6">
               <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">4</span>Dịch vụ đi kèm</h2>
               <div className="max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
@@ -356,7 +331,6 @@ export default function BookingPage() {
               </div>
             </motion.div>
 
-            {/* Step 5: Thông tin liên hệ */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="bg-card rounded-3xl border border-border p-6">
               <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">5</span>Thông tin liên hệ</h2>
               <div className="grid sm:grid-cols-2 gap-4">
@@ -367,7 +341,6 @@ export default function BookingPage() {
             </motion.div>
           </div>
 
-         {/* Sidebar - Tóm tắt và Tính tiền */}
           <div className="lg:col-span-1">
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="sticky top-24 bg-card rounded-3xl border border-border p-6 shadow-xl">
               <h3 className="text-lg font-display font-bold text-foreground mb-4">Tóm tắt đơn đặt</h3>
@@ -395,35 +368,36 @@ export default function BookingPage() {
               )}
 
               <div className="border-t border-border pt-4 space-y-2">
-                {/* HIỂN THỊ CHI TIẾT TIỀN SÂN */}
                 <div className="flex flex-col gap-1">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Tiền sân</span>
                     <span className="font-medium">
-                      {formatVND(activeField.gia_thue)}/h x {duration}h
+                      {formatVND(activeField.gia_tieu_chuan)}/h x {duration}h
                     </span>
                   </div>
                   <div className="text-right text-sm font-bold text-foreground">{formatVND(tienSan)}</div>
                 </div>
 
-                {/* HIỂN THỊ CHI TIẾT DỊCH VỤ */}
-                {selectedServices.length > 0 && (
+                {Object.entries(chosenSvc).length > 0 && (
                   <div className="pt-2 space-y-2">
                     <span className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Dịch vụ đã chọn</span>
-                    {selectedServices.map((s) => (
-                      <div key={s.id} className="flex flex-col gap-0.5 border-l-2 border-primary/20 pl-3 py-1">
-                        <div className="flex justify-between text-xs">
-                          <span className="font-medium">{s.ten_dich_vu}</span>
-                          <span>{formatVND(s.gia)} x {s.quantity}</span>
+                    {Object.entries(chosenSvc).map(([id, qty]) => {
+                      const s = services.find((x) => x.id === parseInt(id));
+                      if (!s) return null;
+                      return (
+                        <div key={id} className="flex flex-col gap-0.5 border-l-2 border-primary/20 pl-3 py-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="font-medium">{s.ten_dich_vu}</span>
+                            <span>{formatVND(s.don_gia)} x {qty}</span>
+                          </div>
+                          <div className="text-right text-xs font-bold">{formatVND(s.don_gia * qty)}</div>
                         </div>
-                        <div className="text-right text-xs font-bold">{formatVND(s.gia * s.quantity)}</div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
                 {giamGia > 0 && <div className="flex items-center justify-between text-sm pt-2"><span className="text-primary flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> Giảm giá thẻ</span><span className="font-semibold text-primary">−{formatVND(giamGia)}</span></div>}
-                
                 <div className="flex items-center justify-between pt-2 border-t border-border mt-2"><span className="font-bold">Tổng cộng</span><span className="text-2xl font-display font-bold text-primary">{formatVND(tongCong)}</span></div>
               </div>
 
@@ -435,3 +409,8 @@ export default function BookingPage() {
               <div className="mt-4 flex items-center gap-3 p-3 rounded-xl bg-accent/10 border border-accent/20"><Wifi className="w-5 h-5 text-accent" /><p className="text-[10px] text-muted-foreground">Hỗ trợ: Wifi, bãi đỗ xe, nước uống miễn phí.</p></div>
             </motion.div>
           </div>
+        </div>
+      </div>
+    </>
+  );
+}
