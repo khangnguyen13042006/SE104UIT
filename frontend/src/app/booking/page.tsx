@@ -302,8 +302,11 @@ export default function BookingPage() {
                 {START_TIMES.map((t) => {
                   const available = isStartAvailable(t, duration);
                   const isSelected = startTime === t;
+                  
+                  // LOGIC TÔ VÀNG GIỜ CAO ĐIỂM TỪ 17:00 ĐẾN 23:00
                   const hour = parseInt(t.split(":")[0]);
-                  const isPeak = hour >= 18 && hour < 21;
+                  const isPeak = hour >= 17 && hour <= 23;
+
                   return (
                     <button key={t} disabled={!available} onClick={() => setStartTime(t)} className={`p-3 rounded-xl text-center border-2 transition-all ${isSelected ? "bg-primary text-primary-foreground border-primary shadow-lg" : !available ? "bg-destructive/5 text-destructive/30 border-destructive/10 cursor-not-allowed" : isPeak ? "bg-amber-100 border-amber-400 text-amber-900 hover:bg-amber-200" : "bg-card border-border text-foreground hover:border-primary/30"}`}>
                       <div className="font-bold text-sm">{t}</div><div className="text-[10px] opacity-70">→ {addDuration(t, duration)}</div>
@@ -444,7 +447,6 @@ export default function BookingPage() {
                 )}
 
                 {giamGia > 0 && <div className="flex items-center justify-between text-sm pt-2"><span className="text-primary flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> Giảm giá thẻ</span><span className="font-semibold text-primary">−{formatVND(giamGia)}</span></div>}
-                
                 <div className="flex items-center justify-between pt-2 border-t border-border mt-2">
                   <span className="font-bold">Tổng cộng</span>
                   <span className="text-2xl font-display font-bold text-primary">{formatVND(tongCong)}</span>
