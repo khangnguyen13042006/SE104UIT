@@ -269,7 +269,22 @@ def get_booking(
         raise HTTPException(403, "Bạn không có quyền xem booking này")
     return _booking_to_out(b)
 
-
+@router.post("/{booking_id}/confirm", response_model=BookingOut)
+def confirm_booking(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.ADMIN, UserRole.QUAN_LY, UserRole.NHAN_VIEN)),
+):
+    b = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not b:
+        raise HTTPException(404, "Không tìm thấy booking")
+    if b.trang_thai != BookingStatus.CHO_XAC_NHAN:
+        raise HTTPException(400, "Chỉ có thể xác nhận đơn đang chờ")
+    
+    b.trang_thai = BookingStatus.DA_XAC_NHAN
+    db.commit()
+    db.refresh(b)
+    return _booking_to_out(b)
 @router.post("/{booking_id}/cancel", response_model=BookingOut)
 def cancel_booking(
     booking_id: int,
