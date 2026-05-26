@@ -341,7 +341,6 @@ export default function BookingPage() {
             </motion.div>
           </div>
 
-         {/* Sidebar - Tóm tắt và Tính tiền */}
           <div className="lg:col-span-1">
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="sticky top-24 bg-card rounded-3xl border border-border p-6 shadow-xl">
               <h3 className="text-lg font-display font-bold text-foreground mb-4">Tóm tắt đơn đặt</h3>
@@ -369,7 +368,6 @@ export default function BookingPage() {
               )}
 
               <div className="border-t border-border pt-4 space-y-4">
-                {/* HIỂN THỊ CHI TIẾT TIỀN SÂN */}
                 <div className="flex flex-col gap-1">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground font-bold">Tiền sân</span>
@@ -421,7 +419,6 @@ export default function BookingPage() {
                   )}
                 </div>
 
-                {/* HIỂN THỊ CHI TIẾT DỊCH VỤ */}
                 {Object.entries(chosenSvc).length > 0 && (
                   <div className="space-y-2">
                     <span className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Dịch vụ đã chọn</span>
@@ -462,3 +459,8 @@ export default function BookingPage() {
               <div className="mt-4 flex items-center gap-3 p-3 rounded-xl bg-accent/10 border border-accent/20"><Wifi className="w-5 h-5 text-accent" /><p className="text-[10px] text-muted-foreground">Hỗ trợ: Wifi, bãi đỗ xe, nước uống miễn phí.</p></div>
             </motion.div>
           </div>
+        </div>
+      </div>
+    </>
+  );
+}
