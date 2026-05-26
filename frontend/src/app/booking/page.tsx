@@ -341,6 +341,7 @@ export default function BookingPage() {
             </motion.div>
           </div>
 
+         {/* Sidebar - Tóm tắt và Tính tiền */}
           <div className="lg:col-span-1">
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="sticky top-24 bg-card rounded-3xl border border-border p-6 shadow-xl">
               <h3 className="text-lg font-display font-bold text-foreground mb-4">Tóm tắt đơn đặt</h3>
@@ -367,53 +368,97 @@ export default function BookingPage() {
                 </div>
               )}
 
-              <div className="border-t border-border pt-4 space-y-2">
+              <div className="border-t border-border pt-4 space-y-4">
+                {/* HIỂN THỊ CHI TIẾT TIỀN SÂN */}
                 <div className="flex flex-col gap-1">
-  <div className="flex items-center justify-between text-sm">
-    <span className="text-muted-foreground">Tiền sân</span>
-    <span className="font-medium text-right italic text-[11px]">
-      (Cao điểm tính từ 17:00)
-    </span>
-  </div>
-  
-  {/* Logic hiển thị chi tiết từng khung giờ */}
-  <div className="space-y-1 bg-secondary/30 p-2 rounded-lg mt-1">
-    {(() => {
-      const [sh, sm] = startTime!.split(":").map(Number);
-      const [eh, em] = endTime!.split(":").map(Number);
-      const start = sh * 60 + sm;
-      const end = eh * 60 + em;
-      const peakLimit = 17 * 60; // Mốc 17h00
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground font-bold">Tiền sân</span>
+                    {startTime && (
+                      <span className="font-medium text-right italic text-[10px] text-amber-600">
+                        (Cao điểm tính từ 17:00)
+                      </span>
+                    )}
+                  </div>
+                  
+                  {startTime ? (
+                    <div className="space-y-1 bg-secondary/30 p-2 rounded-lg mt-1 border border-border/50">
+                      {(() => {
+                        const [sh, sm] = startTime.split(":").map(Number);
+                        const [eh, em] = endTime!.split(":").map(Number);
+                        const start = sh * 60 + sm;
+                        const end = eh * 60 + em;
+                        const peakLimit = 17 * 60;
 
-      let normalHours = 0;
-      let peakHours = 0;
+                        let normalHours = 0;
+                        let peakHours = 0;
 
-      if (start < peakLimit) {
-        normalHours = (Math.min(end, peakLimit) - start) / 60;
-      }
-      if (end > peakLimit) {
-        peakHours = (end - Math.max(start, peakLimit)) / 60;
-      }
+                        if (start < peakLimit) normalHours = (Math.min(end, peakLimit) - start) / 60;
+                        if (end > peakLimit) peakHours = (end - Math.max(start, peakLimit)) / 60;
 
-      return (
-        <>
-          {normalHours > 0 && (
-            <div className="flex justify-between text-[11px]">
-              <span>Giờ thường: {formatVND(activeField.gia_tieu_chuan)} x {normalHours}h</span>
-              <span>{formatVND(normalHours * activeField.gia_tieu_chuan)}</span>
-            </div>
-          )}
-          {peakHours > 0 && (
-            <div className="flex justify-between text-[11px] text-amber-600 font-medium">
-              <span>Giờ cao điểm: {formatVND(activeField.gia_cao_diem)} x {peakHours}h</span>
-              <span>{formatVND(peakHours * activeField.gia_cao_diem)}</span>
-            </div>
-          )}
-        </>
-      );
-    })()}
-  </div>
-  <div className="text-right text-sm font-bold text-foreground mt-1 border-t border-border pt-1">
-    Thành tiền: {formatVND(tienSan)}
-  </div>
-</div>
+                        return (
+                          <>
+                            {normalHours > 0 && (
+                              <div className="flex justify-between text-[11px]">
+                                <span>Giờ thường: {formatVND(activeField.gia_tieu_chuan)} x {normalHours}h</span>
+                                <span>{formatVND(normalHours * activeField.gia_tieu_chuan)}</span>
+                              </div>
+                            )}
+                            {peakHours > 0 && (
+                              <div className="flex justify-between text-[11px] text-amber-700 font-medium">
+                                <span>Giờ cao điểm: {formatVND(activeField.gia_cao_diem)} x {peakHours}h</span>
+                                <span>{formatVND(peakHours * activeField.gia_cao_diem)}</span>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                      <div className="text-right text-xs font-bold pt-1 border-t border-border/50">
+                        Cộng: {formatVND(tienSan)}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-xs italic text-muted-foreground p-2">Vui lòng chọn giờ để thấy chi tiết giá</div>
+                  )}
+                </div>
+
+                {/* HIỂN THỊ CHI TIẾT DỊCH VỤ */}
+                {Object.entries(chosenSvc).length > 0 && (
+                  <div className="space-y-2">
+                    <span className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Dịch vụ đã chọn</span>
+                    <div className="bg-secondary/30 p-2 rounded-lg border border-border/50 space-y-2">
+                      {Object.entries(chosenSvc).map(([id, qty]) => {
+                        const s = services.find((x) => x.id === parseInt(id));
+                        if (!s) return null;
+                        return (
+                          <div key={id} className="flex flex-col gap-0.5 border-l-2 border-primary/20 pl-3">
+                            <div className="flex justify-between text-[11px]">
+                              <span className="font-medium text-foreground">{s.ten_dich_vu}</span>
+                              <span>{formatVND(s.don_gia)} x {qty}</span>
+                            </div>
+                            <div className="text-right text-[11px] font-bold">{formatVND(s.don_gia * qty)}</div>
+                          </div>
+                        );
+                      })}
+                      <div className="text-right text-xs font-bold pt-1 border-t border-border/50">
+                        Cộng: {formatVND(tienDV)}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {giamGia > 0 && <div className="flex items-center justify-between text-sm pt-2"><span className="text-primary flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> Giảm giá thẻ</span><span className="font-semibold text-primary">−{formatVND(giamGia)}</span></div>}
+                
+                <div className="flex items-center justify-between pt-2 border-t border-border mt-2">
+                  <span className="font-bold">Tổng cộng</span>
+                  <span className="text-2xl font-display font-bold text-primary">{formatVND(tongCong)}</span>
+                </div>
+              </div>
+
+              <AnimatePresence>{err && <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="mt-4 p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm">{err}</motion.div>}</AnimatePresence>
+
+              <button onClick={submit} disabled={submitting || !startTime} className="w-full mt-6 py-4 bg-primary text-white rounded-2xl font-semibold shadow-lg hover:shadow-primary/40 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+                {submitting ? <><Loader2 className="w-5 h-5 animate-spin" /><span>Xử lý...</span></> : <><CheckCircle2 className="w-5 h-5" /><span>Đặt sân ngay</span></>}
+              </button>
+              <div className="mt-4 flex items-center gap-3 p-3 rounded-xl bg-accent/10 border border-accent/20"><Wifi className="w-5 h-5 text-accent" /><p className="text-[10px] text-muted-foreground">Hỗ trợ: Wifi, bãi đỗ xe, nước uống miễn phí.</p></div>
+            </motion.div>
+          </div>
