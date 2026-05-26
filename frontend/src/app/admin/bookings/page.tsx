@@ -38,13 +38,14 @@ export default function BookingsAdmin() {
 
   useEffect(() => { load(); }, []);
 
-  const filtered = list.filter(b => {
-    const matchSearch = 
-      b.ten_khach?.toLowerCase().includes(keyword.toLowerCase()) || 
-      b.ma_dat_san?.toLowerCase().includes(keyword.toLowerCase());
-    const matchStatus = statusFilter === "ALL" || b.trang_thai === statusFilter;
-    return matchSearch && matchStatus;
-  });
+ const filtered = list.filter(b => {
+  const matchSearch = 
+    b.ten_khach?.toLowerCase().includes(keyword.toLowerCase()) || 
+    b.ma_dat_san?.toLowerCase().includes(keyword.toLowerCase()) ||
+    b.sdt_khach?.includes(keyword); // Tìm thêm bằng SĐT
+  const matchStatus = statusFilter === "ALL" || b.trang_thai === statusFilter;
+  return matchSearch && matchStatus;
+});
 
   async function confirmBooking(id: number) {
     if (!confirm("Xác nhận đơn đặt sân này?")) return;
@@ -161,10 +162,18 @@ export default function BookingsAdmin() {
                       </div>
                     </td>
                     <td className="p-5 text-center">
-                      <span className={`px-3 py-1 rounded-full text-[10px] font-black border uppercase tracking-tighter ${STATUS_LABEL[b.trang_thai]?.cls}`}>
-                        {STATUS_LABEL[b.trang_thai]?.text}
-                      </span>
-                    </td>
+  <div className="flex flex-col items-center gap-1">
+    <span className={`px-3 py-1 rounded-full text-[10px] font-black border uppercase tracking-tighter ${STATUS_LABEL[b.trang_thai]?.cls}`}>
+      {STATUS_LABEL[b.trang_thai]?.text}
+    </span>
+    {/* Nếu đơn bị hủy, hiện lý do nhỏ ở dưới */}
+    {b.trang_thai === "HUY" && b.ly_do_huy && (
+      <span className="text-[9px] text-red-400 italic max-w-[100px] truncate" title={b.ly_do_huy}>
+        {b.ly_do_huy}
+      </span>
+    )}
+  </div>
+</td>
                     <td className="p-5">
                       <div className="flex justify-end gap-2">
                         {b.trang_thai === "CHO_XAC_NHAN" && (
