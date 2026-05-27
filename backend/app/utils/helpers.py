@@ -4,8 +4,10 @@ from datetime import date, time, datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
-from app.models import Booking, Field, Membership
+# SỬA: Thêm func vào đây để tính SUM
+from sqlalchemy import and_, or_, func 
+# SỬA: Thêm Invoice vào danh sách import từ models
+from app.models import Booking, Field, Membership, Invoice 
 from app.core.config import (
     BookingStatus, MEMBERSHIP_DISCOUNT, MEMBERSHIP_FEE
 )
@@ -13,20 +15,16 @@ from app.core.config import (
 PEAK_HOUR_START = time(17, 0)
 PEAK_HOUR_END = time(22, 0)
 
-
 def generate_code(prefix: str = "BK") -> str:
     """Sinh mã: prefix + 8 chữ số ngẫu nhiên"""
     suffix = "".join(random.choices(string.digits, k=8))
     return f"{prefix}{suffix}"
 
-
 def time_to_minutes(t: time) -> int:
     return t.hour * 60 + t.minute
 
-
 def calculate_hours(start: time, end: time) -> float:
     return (time_to_minutes(end) - time_to_minutes(start)) / 60.0
-
 
 def calculate_field_price(field: Field, start: time, end: time) -> Decimal:
     """Tính tiền sân theo giờ: tách phần thường (6-17h) và cao điểm (17-22h)"""
@@ -48,11 +46,7 @@ def calculate_field_price(field: Field, start: time, end: time) -> Decimal:
 
     return total.quantize(Decimal("1"))
 
-
 def has_booking_conflict(db, san_id, ngay_dat, gio_bat_dau, gio_ket_thuc, exclude_booking_id=None):
-    from app.models import Booking
-    from app.core.config import BookingStatus
-
     query = db.query(Booking).filter(
         Booking.san_id == san_id,
         Booking.ngay_dat == ngay_dat,
@@ -64,10 +58,8 @@ def has_booking_conflict(db, san_id, ngay_dat, gio_bat_dau, gio_ket_thuc, exclud
     if exclude_booking_id:
         query = query.filter(Booking.id != exclude_booking_id)
 
-    # Dùng .first() thay cho .exists() để tương thích SQL Server
     conflict = query.first()
     return conflict is not None
-
 
 def get_active_membership(db: Session, user_id: int) -> Optional[Membership]:
     today = date.today()
@@ -78,42 +70,36 @@ def get_active_membership(db: Session, user_id: int) -> Optional[Membership]:
         Membership.trang_thai == "ACTIVE",
     ).first()
 
-
-# Tìm hàm calculate_lifetime_spend và sửa câu query
 def calculate_lifetime_spend(db: Session, user_id: int) -> float:
-    # Thay vì sum(Booking.tien_san), ta sum(Invoice.tong_cong)
+    """Tính tổng chi tiêu dựa trên Invoice (Sân + Dịch vụ)"""
     total = db.query(func.sum(Invoice.tong_cong)).\
         join(Booking, Invoice.booking_id == Booking.id).\
         filter(
             Booking.khach_hang_id == user_id,
-            Booking.trang_thai == BookingStatus.HOAN_THANH # Chỉ tính đơn đã hoàn thành
+            Booking.trang_thai == BookingStatus.HOAN_THANH
         ).scalar()
     
     return float(total) if total else 0.0
 
-
 def calculate_tier_from_spend(spend) -> str:
-    """Trả về tier (THUONG/BAC/VANG/KIM_CUONG) dựa trên lifetime spend."""
+    """Trả về tier dựa trên lifetime spend (Dùng >= để lấy mốc chuẩn)"""
     from app.core.config import MEMBERSHIP_THRESHOLD
     spend_f = float(spend)
-    if spend_f > MEMBERSHIP_THRESHOLD["KIM_CUONG"]:
+    if spend_f >= MEMBERSHIP_THRESHOLD["KIM_CUONG"]:
         return "KIM_CUONG"
-    if spend_f > MEMBERSHIP_THRESHOLD["VANG"]:
+    if spend_f >= MEMBERSHIP_THRESHOLD["VANG"]:
         return "VANG"
-    if spend_f > MEMBERSHIP_THRESHOLD["BAC"]:
+    if spend_f >= MEMBERSHIP_THRESHOLD["BAC"]:
         return "BAC"
     return "THUONG"
-
 
 def get_discount_rate(loai_the: Optional[str]) -> float:
     if not loai_the:
         return 0.0
     return MEMBERSHIP_DISCOUNT.get(loai_the, 0.0)
 
-
 def calculate_membership_fee(loai_the: str, thang: int) -> Decimal:
     monthly = MEMBERSHIP_FEE.get(loai_the, 0)
-    # Khuyến mãi: 3 tháng giảm 5%, 6 tháng giảm 10%, 12 tháng giảm 20%
     discount = 0.0
     if thang >= 12:
         discount = 0.20
@@ -124,9 +110,7 @@ def calculate_membership_fee(loai_the: str, thang: int) -> Decimal:
     total = monthly * thang * (1 - discount)
     return Decimal(str(round(total)))
 
-
 def is_valid_booking_time(start: time, end: time) -> tuple[bool, str]:
-    """Quy định: bước 30 phút, tối thiểu 0.5h (30 phút), tối đa 3h"""
     if start.minute not in (0, 30) or end.minute not in (0, 30):
         return False, "Giờ đặt phải theo bước 30 phút"
     hours = calculate_hours(start, end)
