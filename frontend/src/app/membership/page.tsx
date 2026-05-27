@@ -213,7 +213,7 @@ export default function MembershipPage() {
         </div>
 
         <p className="text-xs text-ink-400 text-center mt-6">
-          * Tier được tính dựa trên tổng tiền sân đã chi từ các booking hoàn thành (lifetime spend).
+          * Tier được tính dựa trên tổng giá trị hóa đơn (bao gồm tiền sân và dịch vụ) từ các đơn đã hoàn thành.
         </p>
       </div>
     </>
