@@ -335,7 +335,13 @@ export default function BookingPage() {
                       <label key={svc.id} className={`flex items-center gap-4 p-4 rounded-2xl border-2 cursor-pointer transition-all ${qty > 0 ? "border-primary bg-primary/5" : "border-border hover:border-primary/30"}`}>
                         <input type="checkbox" checked={qty > 0} onChange={(e) => setQty(svc.id, e.target.checked ? 1 : 0)} className="w-5 h-5 rounded-lg accent-primary" />
                         <div className="flex-1"><div className="font-medium text-foreground">{svc.ten_dich_vu}</div><div className="text-sm text-muted-foreground">{formatVND(svc.don_gia)}/{svc.don_vi_tinh}</div></div>
-                        {qty > 0 && <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}><button onClick={() => setQty(svc.id, qty - 1)} className="w-8 h-8 rounded-lg bg-secondary font-bold">−</button><span className="w-8 text-center font-bold">{qty}</span><button onClick={() => setQty(svc.id, qty + 1)} className="w-8 h-8 rounded-lg bg-secondary font-bold">+</button></div>}
+                        {qty > 0 && <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}><button 
+  onClick={() => setQty(svc.id, qty + 1)} 
+  disabled={qty >= svc.ton_kho} 
+  className="w-8 h-8 rounded-lg bg-secondary font-bold disabled:opacity-30 disabled:cursor-not-allowed"
+>
+  +
+</button></div>}
                       </label>
                     );
                   })}
