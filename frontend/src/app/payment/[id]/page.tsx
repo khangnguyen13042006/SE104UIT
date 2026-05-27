@@ -29,16 +29,28 @@ export default function PaymentPage() {
   const [copied, setCopied] = useState<string | null>(null);
 
   async function load() {
-    try {
-      const b = await apiGet(`/api/bookings/public/${bookingId}`);
-      setBooking(b);
+  try {
+    const b = await apiGet(`/api/bookings/public/${bookingId}`);
+    setBooking(b);
+    
+    // Ưu tiên lấy invoice từ backend để có đầy đủ giam_gia và tong_cong chính xác
+    if (b.invoice) {
+      setInvoice(b.invoice);
+    } else {
+      // Fallback nếu chưa có invoice (dành cho các bản ghi cũ)
       const tienDV = (b.services || []).reduce((s: number, x: any) => s + parseFloat(x.thanh_tien), 0);
-      const tongCong = parseFloat(b.tien_san) + tienDV;
-      setInvoice({ tong_cong: tongCong, tien_san: parseFloat(b.tien_san), tien_dich_vu: tienDV });
-      if (b.ghi_chu && b.ghi_chu.includes("KHÁCH BÁO ĐÃ CHUYỂN KHOẢN")) setClaimed(true);
-    } catch (e: any) { setErr(e.message); }
-    finally { setLoading(false); }
-  }
+      setInvoice({ 
+        tong_cong: parseFloat(b.tien_san) + tienDV, 
+        tien_san: parseFloat(b.tien_san), 
+        tien_dich_vu: tienDV,
+        giam_gia: 0 
+      });
+    }
+    
+    if (b.ghi_chu && b.ghi_chu.includes("KHÁCH BÁO ĐÃ CHUYỂN KHOẢN")) setClaimed(true);
+  } catch (e: any) { setErr(e.message); }
+  finally { setLoading(false); }
+}
   useEffect(() => { load(); }, [bookingId]);
 
   async function confirmPaid() {
