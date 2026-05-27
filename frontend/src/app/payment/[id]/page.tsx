@@ -148,6 +148,12 @@ export default function PaymentPage() {
                   <BankRow label="Ngân hàng" value={BANK.name} />
                   <BankRow label="Số tài khoản" value={BANK.account} onCopy={() => copyText(BANK.account, "account")} copied={copied === "account"} />
                   <BankRow label="Chủ tài khoản" value={BANK.holder} />
+                  {invoice.giam_gia > 0 && (
+  <div className="flex items-center justify-between py-3 border-b border-border border-dashed">
+    <div className="text-sm text-muted-foreground italic">Giảm giá thành viên VIP</div>
+    <div className="text-sm font-bold text-primary">-{formatVND(invoice.giam_gia)}</div>
+  </div>
+)}
                   <BankRow label="Số tiền" value={formatVND(amount)} big onCopy={() => copyText(String(amount), "amount")} copied={copied === "amount"} />
                   <BankRow label="Nội dung" value={desc} onCopy={() => copyText(desc, "desc")} copied={copied === "desc"} />
                 </div>
