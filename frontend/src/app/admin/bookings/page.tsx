@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { apiGet, apiPost, formatVND, formatDate } from "@/lib/api";
 import {
   Loader2, CheckCircle2, DollarSign, Search, X, Calendar,
-  Filter, Clock, XCircle, RotateCcw, Receipt, User, Phone, MapPin
+  Filter, Clock, XCircle, RotateCcw, Receipt, User, Phone, MapPin, Sparkles
 } from "lucide-react";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
@@ -28,6 +28,7 @@ export default function BookingsAdmin() {
   async function load() {
     setLoading(true);
     try {
+      // Chạy task dọn dẹp đơn quá hạn trước khi load
       await apiPost("/api/bookings/run-auto-tasks", {});
       const data = await apiGet("/api/bookings");
       setList(Array.isArray(data) ? data : []);
@@ -38,17 +39,17 @@ export default function BookingsAdmin() {
 
   useEffect(() => { load(); }, []);
 
- const filtered = list.filter(b => {
-  const matchSearch = 
-    b.ten_khach?.toLowerCase().includes(keyword.toLowerCase()) || 
-    b.ma_dat_san?.toLowerCase().includes(keyword.toLowerCase()) ||
-    b.sdt_khach?.includes(keyword); // Tìm thêm bằng SĐT
-  const matchStatus = statusFilter === "ALL" || b.trang_thai === statusFilter;
-  return matchSearch && matchStatus;
-});
+  const filtered = list.filter(b => {
+    const matchSearch = 
+      b.ten_khach?.toLowerCase().includes(keyword.toLowerCase()) || 
+      b.ma_dat_san?.toLowerCase().includes(keyword.toLowerCase()) ||
+      b.sdt_khach?.includes(keyword);
+    const matchStatus = statusFilter === "ALL" || b.trang_thai === statusFilter;
+    return matchSearch && matchStatus;
+  });
 
   async function confirmBooking(id: number) {
-    if (!confirm("Xác nhận đơn đặt sân này?")) return;
+    if (!confirm("Xác nhận đã nhận tiền cọc và duyệt đơn này?")) return;
     try {
       await apiPost(`/api/bookings/${id}/confirm`, {});
       load();
@@ -56,7 +57,7 @@ export default function BookingsAdmin() {
   }
 
   async function markComplete(id: number) {
-    if (!confirm("Xác nhận hoàn thành đơn và thu tiền?")) return;
+    if (!confirm("Khách đã đá xong. Xác nhận hoàn tất và thu tiền?")) return;
     try {
       await apiPost(`/api/bookings/${id}/complete`, {});
       load();
@@ -64,7 +65,7 @@ export default function BookingsAdmin() {
   }
 
   async function handleCancel() {
-    if (!lyDoHuy.trim()) return alert("Vui lòng nhập lý do hủy");
+    if (!lyDoHuy.trim()) return alert("Vui lòng nhập lý do hủy để lưu lịch sử");
     try {
       await apiPost(`/api/bookings/${cancelTarget.id}/cancel`, { ly_do_huy: lyDoHuy });
       setCancelTarget(null); setLyDoHuy(""); load();
@@ -72,24 +73,25 @@ export default function BookingsAdmin() {
   }
 
   return (
-    <div className="space-y-6 font-serif">
+    <div className="space-y-6 font-sans">
       <div className="flex justify-between items-end border-b border-border pb-4">
         <div>
-          <h1 className="text-3xl font-bold uppercase tracking-tight">Vận Hành Sân Bóng</h1>
-          <p className="text-muted-foreground text-sm italic">Quản lý đặt sân, thu tiền và in hóa đơn</p>
+          <h1 className="text-3xl font-bold uppercase tracking-tight text-primary">Hệ Thống Vận Hành KICKOFF</h1>
+          <p className="text-muted-foreground text-sm italic">Quản lý đặt sân, dòng tiền và hóa đơn dịch vụ</p>
         </div>
         <button onClick={load} className="p-3 bg-secondary rounded-2xl hover:bg-secondary/80 transition-all shadow-sm">
           <RotateCcw className={`w-5 h-5 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
 
+      {/* Bộ lọc */}
       <div className="flex flex-wrap gap-3 bg-card p-4 rounded-3xl border border-border shadow-sm">
         <div className="relative flex-1 min-w-[280px]">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input 
             value={keyword} 
             onChange={e => setKeyword(e.target.value)} 
-            placeholder="Tìm tên khách, mã đơn..." 
+            placeholder="Tìm theo tên khách, mã đơn hoặc SĐT..." 
             className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-input bg-background outline-none focus:border-primary transition-all shadow-inner" 
           />
         </div>
@@ -116,10 +118,10 @@ export default function BookingsAdmin() {
               <thead className="bg-secondary/50 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">
                 <tr>
                   <th className="p-5">Mã đơn / Khách</th>
+                  <th className="p-5">Thông tin sân</th>
                   <th className="p-5">Thời gian đá</th>
-                  {/* CỘT MỚI THÊM VÀO ĐÂY */}
                   <th className="p-5">Thời điểm đặt</th> 
-                  <th className="p-5 text-right">Tổng tiền</th>
+                  <th className="p-5 text-right">Tổng thanh toán</th>
                   <th className="p-5 text-center">Trạng thái</th>
                   <th className="p-5 text-right">Thao tác</th>
                 </tr>
@@ -132,48 +134,53 @@ export default function BookingsAdmin() {
                       <div className="text-xs font-bold text-foreground/80">{b.ten_khach || "Khách lẻ"}</div>
                     </td>
                     <td className="p-5">
+                        <div className="text-sm font-bold text-foreground">{b.ten_san}</div>
+                        <div className="text-[10px] text-muted-foreground">{b.loai_san === "SAN_5" ? "Sân 5 người" : "Sân 7 người"}</div>
+                    </td>
+                    <td className="p-5">
                       <div className="text-sm font-bold">{formatDate(b.ngay_dat)}</div>
-                      <div className="text-[11px] font-mono opacity-60 flex items-center gap-1 mt-0.5">
+                      <div className="text-[11px] font-mono opacity-60 flex items-center gap-1 mt-0.5 text-blue-600">
                         <Clock size={12}/> {b.gio_bat_dau?.slice(0,5)} - {b.gio_ket_thuc?.slice(0,5)}
                       </div>
                     </td>
-                    {/* NỘI DUNG CỘT MỚI: HIỂN THỊ NGÀY GIỜ NHẤN NÚT ĐẶT */}
                     <td className="p-5">
-  <div className="text-xs font-bold text-muted-foreground">
-    {b.ngay_tao ? (
-      (() => {
-        const d = new Date(b.ngay_tao);
-        d.setHours(d.getHours() + 7); // Cộng thủ công 7 tiếng bị thiếu
-        return d.toLocaleString('vi-VN', {
-          hour: '2-digit',
-          minute: '2-digit',
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour12: false
-        });
-      })()
-    ) : "N/A"}
-  </div>
-</td>
-                    <td className="p-5 text-right">
-                      <div className="font-black text-foreground">
-                        {formatVND(b.invoice?.tong_cong || b.tien_san)}
+                      <div className="text-[10px] font-bold text-muted-foreground leading-tight">
+                        {b.ngay_tao ? (
+                          (() => {
+                            const d = new Date(b.ngay_tao);
+                            d.setHours(d.getHours() + 7); // Múi giờ VN
+                            return d.toLocaleString('vi-VN', {
+                              hour: '2-digit', minute: '2-digit',
+                              day: '2-digit', month: '2-digit', year: 'numeric',
+                              hour12: false
+                            });
+                          })()
+                        ) : "N/A"}
                       </div>
                     </td>
+                    <td className="p-5 text-right">
+                      <div className="font-black text-foreground">
+                        {/* Ưu tiên hiện số tiền cuối cùng của hóa đơn */}
+                        {formatVND(b.invoice?.tong_cong || b.tien_san)}
+                      </div>
+                      {b.invoice?.giam_gia > 0 && (
+                        <div className="text-[9px] text-primary font-bold italic flex items-center justify-end gap-1">
+                           <Sparkles size={10}/> Đã giảm {formatVND(b.invoice.giam_gia)}
+                        </div>
+                      )}
+                    </td>
                     <td className="p-5 text-center">
-  <div className="flex flex-col items-center gap-1">
-    <span className={`px-3 py-1 rounded-full text-[10px] font-black border uppercase tracking-tighter ${STATUS_LABEL[b.trang_thai]?.cls}`}>
-      {STATUS_LABEL[b.trang_thai]?.text}
-    </span>
-    {/* Nếu đơn bị hủy, hiện lý do nhỏ ở dưới */}
-    {b.trang_thai === "HUY" && b.ly_do_huy && (
-      <span className="text-[9px] text-red-400 italic max-w-[100px] truncate" title={b.ly_do_huy}>
-        {b.ly_do_huy}
-      </span>
-    )}
-  </div>
-</td>
+                      <div className="flex flex-col items-center gap-1">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black border uppercase tracking-tighter ${STATUS_LABEL[b.trang_thai]?.cls}`}>
+                          {STATUS_LABEL[b.trang_thai]?.text}
+                        </span>
+                        {b.trang_thai === "HUY" && b.ly_do_huy && (
+                          <span className="text-[9px] text-red-400 italic max-w-[100px] truncate" title={b.ly_do_huy}>
+                            Lý do: {b.ly_do_huy}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="p-5">
                       <div className="flex justify-end gap-2">
                         {b.trang_thai === "CHO_XAC_NHAN" && (
@@ -186,11 +193,11 @@ export default function BookingsAdmin() {
                             <DollarSign size={18}/>
                           </button>
                         )}
-                        <button onClick={() => setBillTarget(b)} className="p-2 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-900 hover:text-white transition-all shadow-sm" title="Hóa đơn">
+                        <button onClick={() => setBillTarget(b)} className="p-2 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-900 hover:text-white transition-all shadow-sm" title="Xem Hóa đơn">
                           <Receipt size={18}/>
                         </button>
                         {["CHO_XAC_NHAN", "DA_XAC_NHAN"].includes(b.trang_thai) && (
-                          <button onClick={() => setCancelTarget(b)} className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all shadow-sm" title="Hủy">
+                          <button onClick={() => setCancelTarget(b)} className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all shadow-sm" title="Hủy đơn">
                             <XCircle size={18}/>
                           </button>
                         )}
@@ -204,54 +211,84 @@ export default function BookingsAdmin() {
         </div>
       )}
 
+      {/* Modal Hóa Đơn (Đã nâng cấp logic hiển thị chiết khấu) */}
       <AnimatePresence>
         {billTarget && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
             <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-white text-slate-900 w-full max-w-lg rounded-sm shadow-2xl overflow-hidden border-t-[12px] border-primary">
               <div className="p-8 border-b border-dashed border-slate-200 text-center relative">
                 <button onClick={() => setBillTarget(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-900"><X size={24}/></button>
-                <h2 className="text-2xl font-black uppercase tracking-tight mb-1">HÓA ĐƠN THANH TOÁN</h2>
-                <div className="text-[10px] font-mono text-slate-400">Ref: {billTarget.ma_dat_san}</div>
+                <div className="font-bold text-primary mb-2">SÂN BÓNG ĐÁ KICKOFF</div>
+                <h2 className="text-2xl font-black uppercase tracking-tight mb-1">HÓA ĐƠN DỊCH VỤ</h2>
+                <div className="text-[10px] font-mono text-slate-400">Số đơn: {billTarget.ma_dat_san}</div>
               </div>
               <div className="p-8 space-y-6">
                 <div className="grid grid-cols-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 gap-8">
-                  <div><div>Khách hàng</div><div className="text-slate-900 text-sm">{billTarget.ten_khach || "N/A"}</div></div>
-                  <div className="text-right"><div>Ngày đặt</div><div className="text-slate-900 text-sm">{formatDate(billTarget.ngay_dat)}</div></div>
+                  <div><div>Khách hàng</div><div className="text-slate-900 text-sm">{billTarget.ten_khach || "Khách lẻ vãng lai"}</div></div>
+                  <div className="text-right"><div>Ngày thi đấu</div><div className="text-slate-900 text-sm">{formatDate(billTarget.ngay_dat)}</div></div>
                 </div>
+
                 <table className="w-full text-sm">
                   <thead className="border-b-2 border-slate-900 font-black uppercase text-[10px]">
                     <tr><th className="py-2 text-left">Nội dung</th><th className="py-2 text-right">Thành tiền</th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    <tr><td className="py-4 font-medium italic">Tiền thuê sân ({billTarget.so_gio}h)</td><td className="py-4 text-right font-black">{formatVND(billTarget.tien_san)}</td></tr>
+                    <tr>
+                        <td className="py-4 font-medium italic">
+                            Tiền thuê sân ({billTarget.ten_san})
+                            <div className="text-[10px] text-slate-400 font-normal">Thời gian: {billTarget.gio_bat_dau?.slice(0,5)} - {billTarget.gio_ket_thuc?.slice(0,5)}</div>
+                        </td>
+                        <td className="py-4 text-right font-black">{formatVND(billTarget.tien_san)}</td>
+                    </tr>
+                    
                     {billTarget.services?.map((s: any) => (
-                      <tr key={s.id}><td className="py-3 text-slate-500">{s.ten_dich_vu} x{s.so_luong}</td><td className="py-3 text-right font-bold">{formatVND(s.thanh_tien)}</td></tr>
+                      <tr key={s.id}>
+                        <td className="py-3 text-slate-500">{s.ten_dich_vu} x{s.so_luong}</td>
+                        <td className="py-3 text-right font-bold">{formatVND(s.thanh_tien)}</td>
+                      </tr>
                     ))}
+
+                    {/* DÒNG GIẢM GIÁ (Nếu có) */}
+                    {billTarget.invoice?.giam_gia > 0 && (
+                      <tr className="text-primary font-bold">
+                        <td className="py-3 italic flex items-center gap-1"><Sparkles size={14}/> Giảm giá thành viên</td>
+                        <td className="py-3 text-right">-{formatVND(billTarget.invoice.giam_gia)}</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
+
                 <div className="pt-6 border-t-2 border-slate-900 flex justify-between items-center">
-                  <span className="font-black uppercase text-sm">Tổng thanh toán</span>
-                  <span className="text-3xl font-black text-primary">{formatVND(billTarget.invoice?.tong_cong || billTarget.tien_san)}</span>
+                  <span className="font-black uppercase text-sm">Tổng cộng</span>
+                  <span className="text-3xl font-black text-primary">
+                    {formatVND(billTarget.invoice?.tong_cong || billTarget.tien_san)}
+                  </span>
                 </div>
-                <button onClick={() => window.print()} className="w-full py-4 bg-slate-900 text-white font-black text-xs uppercase tracking-[0.2em] hover:bg-primary transition-colors">In hóa đơn ngay</button>
+                
+                <div className="flex gap-2 no-print">
+                    <button onClick={() => window.print()} className="flex-1 py-4 bg-slate-900 text-white font-black text-xs uppercase tracking-[0.2em] hover:bg-primary transition-colors">In hóa đơn</button>
+                    <button onClick={() => setBillTarget(null)} className="px-6 py-4 border border-slate-200 font-bold text-xs uppercase">Đóng</button>
+                </div>
+                <div className="text-center text-[10px] text-slate-400 italic">Cảm ơn quý khách đã tin tưởng KICKOFF!</div>
               </div>
             </motion.div>
           </div>
         )}
 
+        {/* Modal Hủy Đơn */}
         {cancelTarget && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-card w-full max-w-md rounded-3xl border border-border p-8 shadow-2xl">
               <h3 className="text-2xl font-black mb-2 uppercase italic text-red-600">Hủy đơn đặt sân</h3>
-              <p className="text-muted-foreground text-sm mb-6">Vui lòng nhập lý do cụ thể để lưu lại lịch sử hệ thống.</p>
+              <p className="text-muted-foreground text-sm mb-6">Mọi dịch vụ và tồn kho sẽ được hoàn trả tự động sau khi hủy.</p>
               <textarea 
                 value={lyDoHuy} 
                 onChange={e => setLyDoHuy(e.target.value)} 
-                placeholder="Ví dụ: Khách báo bận, sân bảo trì..." 
+                placeholder="Ví dụ: Khách báo bận đột xuất, lỗi trùng lịch..." 
                 className="w-full p-4 rounded-2xl bg-secondary/50 border border-border outline-none min-h-[120px] mb-6 focus:border-red-500 transition-all font-medium shadow-inner" 
               />
               <div className="flex gap-3">
-                <button onClick={() => { setCancelTarget(null); setLyDoHuy(""); }} className="flex-1 py-4 font-bold hover:bg-secondary rounded-2xl transition-all">Đóng</button>
+                <button onClick={() => { setCancelTarget(null); setLyDoHuy(""); }} className="flex-1 py-4 font-bold hover:bg-secondary rounded-2xl transition-all">Quay lại</button>
                 <button onClick={handleCancel} className="flex-1 py-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-red-600/20 active:scale-95 transition-all">Xác nhận hủy</button>
               </div>
             </motion.div>
