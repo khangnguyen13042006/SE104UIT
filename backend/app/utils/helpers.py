@@ -79,14 +79,17 @@ def get_active_membership(db: Session, user_id: int) -> Optional[Membership]:
     ).first()
 
 
-def calculate_lifetime_spend(db: Session, user_id: int) -> Decimal:
-    """Tổng tiền user đã chi (tiền sân tất cả booking hoàn thành)."""
-    from sqlalchemy import func
-    result = db.query(func.coalesce(func.sum(Booking.tien_san), 0)).filter(
-        Booking.khach_hang_id == user_id,
-        Booking.trang_thai == BookingStatus.HOAN_THANH,
-    ).scalar()
-    return Decimal(str(result or 0))
+# Tìm hàm calculate_lifetime_spend và sửa câu query
+def calculate_lifetime_spend(db: Session, user_id: int) -> float:
+    # Thay vì sum(Booking.tien_san), ta sum(Invoice.tong_cong)
+    total = db.query(func.sum(Invoice.tong_cong)).\
+        join(Booking, Invoice.booking_id == Booking.id).\
+        filter(
+            Booking.khach_hang_id == user_id,
+            Booking.trang_thai == BookingStatus.HOAN_THANH # Chỉ tính đơn đã hoàn thành
+        ).scalar()
+    
+    return float(total) if total else 0.0
 
 
 def calculate_tier_from_spend(spend) -> str:
