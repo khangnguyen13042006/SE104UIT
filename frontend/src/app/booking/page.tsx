@@ -150,13 +150,22 @@ export default function BookingPage() {
   }
 
   function setQty(svcId: number, qty: number) {
-    setChosenSvc((c) => {
-      const n = { ...c };
-      if (qty <= 0) delete n[svcId];
-      else n[svcId] = qty;
-      return n;
-    });
+  // Tìm thông tin dịch vụ để lấy ton_kho
+  const svc = services.find(s => s.id === svcId);
+  
+  // Kiểm tra nếu tăng số lượng mà vượt quá tồn kho
+  if (svc && qty > svc.ton_kho) {
+    alert(`Rất tiếc, ${svc.ten_dich_vu} chỉ còn ${svc.ton_kho} sản phẩm.`);
+    return; // Dừng lại không cập nhật
   }
+
+  setChosenSvc((c) => {
+    const n = { ...c };
+    if (qty <= 0) delete n[svcId];
+    else n[svcId] = qty;
+    return n;
+  });
+}
 
   const endTime = useMemo(() => startTime ? addDuration(startTime, duration) : null, [startTime, duration]);
 
