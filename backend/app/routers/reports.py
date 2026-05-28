@@ -34,13 +34,13 @@ def revenue_report(
     _: User = Depends(require_roles(UserRole.ADMIN, UserRole.QUAN_LY)),
 ):
     _validate_range(tu_ngay, den_ngay)
-    # Lấy invoices dựa trên ngày diễn ra trận đấu (ngay_dat)
+    # Filter theo ngày đá để đảm bảo các đơn đặt từ trước cho hôm nay vẫn hiện lên
     rows = (
         db.query(Booking, Invoice)
         .join(Invoice, Invoice.booking_id == Booking.id)
         .filter(Booking.ngay_dat >= tu_ngay, Booking.ngay_dat <= den_ngay)
         .filter(Booking.trang_thai != BookingStatus.HUY)
-        .filter(Invoice.trang_thai.in_([PaymentStatus.DA_THAN_TOAN, PaymentStatus.CHO_XAC_NHAN]))
+        .filter(Invoice.trang_thai.in_([PaymentStatus.DA_THANH_TOAN, PaymentStatus.CHO_XAC_NHAN]))
         .all()
     )
 
@@ -83,7 +83,6 @@ def field_ranking(
 ):
     _validate_range(tu_ngay, den_ngay)
     so_ngay = (den_ngay - tu_ngay).days + 1
-    # Năng suất tối đa 16h/ngày
     gio_hd_tong = so_ngay * 16
 
     fields = db.query(Field).all()
@@ -97,12 +96,11 @@ def field_ranking(
         ).all()
         
         tong_luot = len(bookings)
-        # Tính tổng số giờ thực tế (nghìn lẻ phút cũng được tính)
         tong_gio = sum(b.so_gio for b in bookings)
         
         doanh_thu = sum(
             float(b.invoice.tong_cong) for b in bookings
-            if b.invoice and b.invoice.trang_thai in [PaymentStatus.DA_THAN_TOAN, PaymentStatus.CHO_XAC_NHAN]
+            if b.invoice and b.invoice.trang_thai in [PaymentStatus.DA_THANH_TOAN, PaymentStatus.CHO_XAC_NHAN]
         )
         
         ty_le = round((tong_gio / gio_hd_tong * 100), 2) if gio_hd_tong else 0
@@ -138,7 +136,7 @@ def peak_hours(
 
     hour_counts = {h: 0 for h in range(6, 22)}
     for b in bookings:
-        # Chỉ lặp qua các giờ thực tế bắt đầu, tránh đếm lặp giờ kết thúc
+        # Sửa logic đếm giờ cao điểm: không đếm lặp giờ kết thúc
         for h in range(b.gio_bat_dau.hour, b.gio_ket_thuc.hour):
             if h in hour_counts:
                 hour_counts[h] += 1
@@ -200,7 +198,7 @@ def summary_report(
         top_f = db.query(Field).filter(Field.id == top_id).first()
         san_top = top_f.ten_san if top_f else None
 
-    # Giờ cao điểm - Sửa lỗi thụt lề ở đây
+    # Fix lỗi IndentationError ở đây
     hour_counts = {h: 0 for h in range(6, 22)}
     for b in bookings:
         for h in range(b.gio_bat_dau.hour, b.gio_ket_thuc.hour):
