@@ -41,7 +41,7 @@ def revenue_report(
         .join(Invoice, Invoice.booking_id == Booking.id)
         .filter(Booking.ngay_dat >= tu_ngay, Booking.ngay_dat <= den_ngay)
         .filter(Booking.trang_thai != BookingStatus.HUY)
-        .filter(Invoice.trang_thai == PaymentStatus.DA_THANH_TOAN)
+        .filter(Invoice.trang_thai.in_([PaymentStatus.DA_THANH_TOAN, PaymentStatus.CHO_XAC_NHAN]))
         .all()
     )
 
@@ -187,10 +187,7 @@ def summary_report(
     invoices = (
         db.query(Invoice)
         .join(Booking, Invoice.booking_id == Booking.id)
-        .filter(
-            Booking.ngay_dat >= tu_ngay, Booking.ngay_dat <= den_ngay,
-            Invoice.trang_thai == PaymentStatus.DA_THANH_TOAN,
-        )
+        .filter(Invoice.trang_thai.in_([PaymentStatus.DA_THANH_TOAN, PaymentStatus.CHO_XAC_NHAN]))
         .all()
     )
     tong_dt = sum(float(inv.tong_cong) for inv in invoices)
@@ -208,7 +205,9 @@ def summary_report(
     # Giờ cao điểm
     hour_counts = {h: 0 for h in range(6, 22)}
     for b in bookings:
-        for h in range(b.gio_bat_dau.hour, min(b.gio_ket_thuc.hour + (1 if b.gio_ket_thuc.minute > 0 else 0), 22)):
+        for h in range(b.gio_bat_dau.hour, b.gio_ket_thuc.hour):
+    if 6 <= h < 22:
+        hour_counts[h] += 1
             if h in hour_counts:
                 hour_counts[h] += 1
     gio_top = None
