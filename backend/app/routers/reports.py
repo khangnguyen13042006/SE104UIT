@@ -34,13 +34,12 @@ def revenue_report(
     _: User = Depends(require_roles(UserRole.ADMIN, UserRole.QUAN_LY)),
 ):
     _validate_range(tu_ngay, den_ngay)
-    # Lấy invoices dựa trên ngày diễn ra trận đấu
+    # Lấy doanh thu từ các đơn không bị hủy
     rows = (
         db.query(Booking, Invoice)
         .join(Invoice, Invoice.booking_id == Booking.id)
         .filter(Booking.ngay_dat >= tu_ngay, Booking.ngay_dat <= den_ngay)
         .filter(Booking.trang_thai != BookingStatus.HUY)
-        .filter(Invoice.trang_thai == PaymentStatus.DA_THANH_TOAN)
         .all()
     )
 
@@ -98,9 +97,10 @@ def field_ranking(
         tong_luot = len(bookings)
         tong_gio = sum(b.so_gio for b in bookings)
         
+        # SỬA Ở ĐÂY: Tính tiền cho mọi đơn đã đặt/xác nhận để khớp với tổng giờ
         doanh_thu = sum(
             float(b.invoice.tong_cong) for b in bookings
-            if b.invoice and b.invoice.trang_thai == PaymentStatus.DA_THANH_TOAN
+            if b.invoice
         )
         
         ty_le = round((tong_gio / gio_hd_tong * 100), 2) if gio_hd_tong else 0
@@ -178,11 +178,12 @@ def summary_report(
     tong_luot = len(bookings)
     tong_gio = sum(b.so_gio for b in bookings)
 
+    # Tính doanh thu tổng quát
     invoices = (
         db.query(Invoice)
         .join(Booking, Invoice.booking_id == Booking.id)
         .filter(Booking.ngay_dat >= tu_ngay, Booking.ngay_dat <= den_ngay)
-        .filter(Invoice.trang_thai == PaymentStatus.DA_THANH_TOAN)
+        .filter(Booking.trang_thai != BookingStatus.HUY)
         .all()
     )
     tong_dt = sum(float(inv.tong_cong) for inv in invoices)
