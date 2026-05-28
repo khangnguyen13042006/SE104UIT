@@ -34,13 +34,13 @@ def revenue_report(
     _: User = Depends(require_roles(UserRole.ADMIN, UserRole.QUAN_LY)),
 ):
     _validate_range(tu_ngay, den_ngay)
-    # Filter theo ngày đá để đảm bảo các đơn đặt từ trước cho hôm nay vẫn hiện lên
+    # Lấy invoices dựa trên ngày diễn ra trận đấu
     rows = (
         db.query(Booking, Invoice)
         .join(Invoice, Invoice.booking_id == Booking.id)
         .filter(Booking.ngay_dat >= tu_ngay, Booking.ngay_dat <= den_ngay)
         .filter(Booking.trang_thai != BookingStatus.HUY)
-        .filter(Invoice.trang_thai.in_([PaymentStatus.DA_THANH_TOAN, PaymentStatus.CHO_XAC_NHAN]))
+        .filter(Invoice.trang_thai == PaymentStatus.DA_THANH_TOAN)
         .all()
     )
 
@@ -100,7 +100,7 @@ def field_ranking(
         
         doanh_thu = sum(
             float(b.invoice.tong_cong) for b in bookings
-            if b.invoice and b.invoice.trang_thai in [PaymentStatus.DA_THANH_TOAN, PaymentStatus.CHO_XAC_NHAN]
+            if b.invoice and b.invoice.trang_thai == PaymentStatus.DA_THANH_TOAN
         )
         
         ty_le = round((tong_gio / gio_hd_tong * 100), 2) if gio_hd_tong else 0
@@ -136,7 +136,6 @@ def peak_hours(
 
     hour_counts = {h: 0 for h in range(6, 22)}
     for b in bookings:
-        # Sửa logic đếm giờ cao điểm: không đếm lặp giờ kết thúc
         for h in range(b.gio_bat_dau.hour, b.gio_ket_thuc.hour):
             if h in hour_counts:
                 hour_counts[h] += 1
@@ -183,7 +182,7 @@ def summary_report(
         db.query(Invoice)
         .join(Booking, Invoice.booking_id == Booking.id)
         .filter(Booking.ngay_dat >= tu_ngay, Booking.ngay_dat <= den_ngay)
-        .filter(Invoice.trang_thai.in_([PaymentStatus.DA_THANH_TOAN, PaymentStatus.CHO_XAC_NHAN]))
+        .filter(Invoice.trang_thai == PaymentStatus.DA_THANH_TOAN)
         .all()
     )
     tong_dt = sum(float(inv.tong_cong) for inv in invoices)
@@ -198,11 +197,10 @@ def summary_report(
         top_f = db.query(Field).filter(Field.id == top_id).first()
         san_top = top_f.ten_san if top_f else None
 
-    # Fix lỗi IndentationError ở đây
     hour_counts = {h: 0 for h in range(6, 22)}
     for b in bookings:
         for h in range(b.gio_bat_dau.hour, b.gio_ket_thuc.hour):
-            if 6 <= h < 22:
+            if h in hour_counts:
                 hour_counts[h] += 1
     
     gio_top = None
