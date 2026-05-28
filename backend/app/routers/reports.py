@@ -13,7 +13,6 @@ router = APIRouter(prefix="/api/reports", tags=["Reports"])
 
 def _date_label(d: date, nhom: str) -> str:
     if nhom == "TUAN":
-        # ISO week
         y, w, _ = d.isocalendar()
         return f"{y}-W{w:02d}"
     if nhom == "THANG":
@@ -35,13 +34,13 @@ def revenue_report(
     _: User = Depends(require_roles(UserRole.ADMIN, UserRole.QUAN_LY)),
 ):
     _validate_range(tu_ngay, den_ngay)
-    # Lấy invoices của booking hoàn thành hoặc đã thanh toán
+    # Lấy invoices dựa trên ngày diễn ra trận đấu (ngay_dat)
     rows = (
         db.query(Booking, Invoice)
         .join(Invoice, Invoice.booking_id == Booking.id)
         .filter(Booking.ngay_dat >= tu_ngay, Booking.ngay_dat <= den_ngay)
         .filter(Booking.trang_thai != BookingStatus.HUY)
-        .filter(Invoice.trang_thai.in_([PaymentStatus.DA_THANH_TOAN, PaymentStatus.CHO_XAC_NHAN]))
+        .filter(Invoice.trang_thai.in_([PaymentStatus.DA_THAN_TOAN, PaymentStatus.CHO_XAC_NHAN]))
         .all()
     )
 
@@ -53,7 +52,6 @@ def revenue_report(
         g = groups.setdefault(label, {"tien_san": 0.0, "tien_dich_vu": 0.0, "tong": 0.0})
         tsan = float(inv.tien_san)
         tdv = float(inv.tien_dich_vu)
-        # Giảm giá trừ vào tiền sân
         tong = float(inv.tong_cong)
         g["tien_san"] += tsan
         g["tien_dich_vu"] += tdv
@@ -85,7 +83,7 @@ def field_ranking(
 ):
     _validate_range(tu_ngay, den_ngay)
     so_ngay = (den_ngay - tu_ngay).days + 1
-    # Giả định sân hoạt động 16h/ngày (6h - 22h)
+    # Năng suất tối đa 16h/ngày
     gio_hd_tong = so_ngay * 16
 
     fields = db.query(Field).all()
@@ -97,12 +95,16 @@ def field_ranking(
             Booking.ngay_dat <= den_ngay,
             Booking.trang_thai.in_([BookingStatus.HOAN_THANH, BookingStatus.DA_XAC_NHAN]),
         ).all()
+        
         tong_luot = len(bookings)
+        # Tính tổng số giờ thực tế (nghìn lẻ phút cũng được tính)
         tong_gio = sum(b.so_gio for b in bookings)
+        
         doanh_thu = sum(
             float(b.invoice.tong_cong) for b in bookings
-            if b.invoice and b.invoice.trang_thai == PaymentStatus.DA_THANH_TOAN
+            if b.invoice and b.invoice.trang_thai in [PaymentStatus.DA_THAN_TOAN, PaymentStatus.CHO_XAC_NHAN]
         )
+        
         ty_le = round((tong_gio / gio_hd_tong * 100), 2) if gio_hd_tong else 0
         result.append({
             "san_id": f.id,
@@ -113,7 +115,7 @@ def field_ranking(
             "ty_le_lap_day": ty_le,
             "doanh_thu": round(doanh_thu),
         })
-    # Xếp hạng theo tổng lượt đặt
+    
     result.sort(key=lambda x: x["tong_luot_dat"], reverse=True)
     for i, r in enumerate(result):
         r["xep_hang"] = i + 1
@@ -134,15 +136,10 @@ def peak_hours(
         Booking.trang_thai != BookingStatus.HUY,
     ).all()
 
-    # Đếm theo từng giờ 6-22
     hour_counts = {h: 0 for h in range(6, 22)}
     for b in bookings:
-        start_h = b.gio_bat_dau.hour
-        end_h = b.gio_ket_thuc.hour
-        # Đếm phần phút thực tế cũng được nhưng đơn giản: count mọi giờ trùng
-        if b.gio_ket_thuc.minute > 0:
-            end_h += 1
-        for h in range(start_h, min(end_h, 22)):
+        # Chỉ lặp qua các giờ thực tế bắt đầu, tránh đếm lặp giờ kết thúc
+        for h in range(b.gio_bat_dau.hour, b.gio_ket_thuc.hour):
             if h in hour_counts:
                 hour_counts[h] += 1
 
@@ -187,35 +184,34 @@ def summary_report(
     invoices = (
         db.query(Invoice)
         .join(Booking, Invoice.booking_id == Booking.id)
+        .filter(Booking.ngay_dat >= tu_ngay, Booking.ngay_dat <= den_ngay)
         .filter(Invoice.trang_thai.in_([PaymentStatus.DA_THANH_TOAN, PaymentStatus.CHO_XAC_NHAN]))
         .all()
     )
     tong_dt = sum(float(inv.tong_cong) for inv in invoices)
 
-    # Sân được đặt nhiều nhất
     field_counts = {}
     for b in bookings:
         field_counts[b.san_id] = field_counts.get(b.san_id, 0) + 1
+    
     san_top = None
     if field_counts:
         top_id = max(field_counts, key=field_counts.get)
         top_f = db.query(Field).filter(Field.id == top_id).first()
         san_top = top_f.ten_san if top_f else None
 
-    # Giờ cao điểm
+    # Giờ cao điểm - Sửa lỗi thụt lề ở đây
     hour_counts = {h: 0 for h in range(6, 22)}
     for b in bookings:
         for h in range(b.gio_bat_dau.hour, b.gio_ket_thuc.hour):
-    if 6 <= h < 22:
-        hour_counts[h] += 1
-            if h in hour_counts:
+            if 6 <= h < 22:
                 hour_counts[h] += 1
+    
     gio_top = None
     if any(hour_counts.values()):
         top_h = max(hour_counts, key=hour_counts.get)
         gio_top = f"{top_h:02d}:00-{top_h+1:02d}:00"
 
-    # Tổng khách hàng (unique)
     khach_set = set()
     for b in bookings:
         if b.khach_hang_id:
@@ -223,7 +219,6 @@ def summary_report(
         elif b.sdt_khach_vang_lai:
             khach_set.add(f"vl:{b.sdt_khach_vang_lai}")
 
-    # Tổng số lượt dùng dịch vụ
     tong_dv = sum(len(b.booking_services) for b in bookings)
 
     so_san = db.query(Field).count() or 1
