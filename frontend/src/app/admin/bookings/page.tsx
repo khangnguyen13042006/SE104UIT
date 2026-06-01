@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { apiGet, apiPost, formatVND, formatDate } from "@/lib/api";
+import { apiGet, apiPost, apiDelete, formatVND, formatDate } from "@/lib/api";
 import {
-  Loader2, CheckCircle2, DollarSign, Search, X, Clock, XCircle, RotateCcw, Receipt, Sparkles, Undo2
+  Loader2, CheckCircle2, DollarSign, Search, X, Clock, XCircle, 
+  RotateCcw, Receipt, Sparkles, Undo2, ShoppingCart, Trash2, Plus
 } from "lucide-react";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
@@ -17,20 +18,34 @@ const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
 
 export default function BookingsAdmin() {
   const [list, setList] = useState<any[]>([]);
+  const [allServices, setAllServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  
+  // States cho Modal
   const [billTarget, setBillTarget] = useState<any>(null);
   const [cancelTarget, setCancelTarget] = useState<any>(null);
+  const [serviceTarget, setServiceTarget] = useState<any>(null);
+
+  // States form Hủy
   const [lyDoHuy, setLyDoHuy] = useState("");
   const [isRefund, setIsRefund] = useState(false);
+
+  // States form Dịch vụ
+  const [selSvcId, setSelSvcId] = useState("");
+  const [selQty, setSelQty] = useState(1);
 
   async function load() {
     setLoading(true);
     try {
       await apiPost("/api/bookings/run-auto-tasks", {});
-      const data = await apiGet("/api/bookings");
-      setList(Array.isArray(data) ? data : []);
+      const [bData, sData] = await Promise.all([
+        apiGet("/api/bookings"),
+        apiGet("/api/services") // Lấy danh sách dịch vụ để chọn
+      ]);
+      setList(Array.isArray(bData) ? bData : []);
+      setAllServices(Array.isArray(sData) ? sData : (sData?.data || []));
     } catch (e) {
       console.error("Load bookings failed", e);
     } finally { setLoading(false); }
@@ -85,6 +100,30 @@ export default function BookingsAdmin() {
     } catch (e: any) { alert(e.message); }
   }
 
+  // ==== XỬ LÝ DỊCH VỤ (THÊM / XÓA) ====
+  async function handleAddService() {
+    if (!selSvcId || selQty <= 0) return alert("Vui lòng chọn dịch vụ và số lượng lớn hơn 0");
+    try {
+      const updatedBooking = await apiPost(`/api/bookings/${serviceTarget.id}/services`, {
+        dich_vu_id: parseInt(selSvcId),
+        so_luong: selQty
+      });
+      // Cập nhật lại target modal và list bên ngoài để UI nhảy số tiền ngay
+      setServiceTarget(updatedBooking);
+      setList(prev => prev.map(b => b.id === updatedBooking.id ? updatedBooking : b));
+      setSelQty(1);
+    } catch (e: any) { alert(e.message); }
+  }
+
+  async function handleRemoveService(bs_id: number) {
+    if (!confirm("Chắc chắn muốn xóa dịch vụ này khỏi đơn?")) return;
+    try {
+      const updatedBooking = await apiDelete(`/api/bookings/${serviceTarget.id}/services/${bs_id}`);
+      setServiceTarget(updatedBooking);
+      setList(prev => prev.map(b => b.id === updatedBooking.id ? updatedBooking : b));
+    } catch (e: any) { alert(e.message); }
+  }
+
   return (
     <div className="space-y-6 font-sans">
       <div className="flex justify-between items-end border-b border-border pb-4">
@@ -135,7 +174,7 @@ export default function BookingsAdmin() {
                   <th className="p-5">Thời điểm đặt</th> 
                   <th className="p-5 text-right">Tổng thanh toán</th>
                   <th className="p-5 text-center">Trạng thái</th>
-                  <th className="p-5 text-right">Thao tác</th>
+                  <th className="p-5 text-right min-w-[220px]">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -186,7 +225,6 @@ export default function BookingsAdmin() {
                           {STATUS_LABEL[b.trang_thai]?.text}
                         </span>
                         
-                        {/* TAG Hiển thị trạng thái hoàn tiền (KHÔNG phụ thuộc vào CHO_HOAN_TIEN cứng của backend) */}
                         {b.trang_thai === "HUY" && (
                           <>
                             {b.hoan_tien === false && (
@@ -204,7 +242,6 @@ export default function BookingsAdmin() {
                                 ✅ Đã hoàn tiền (50%)
                               </span>
                             )}
-                            
                             {b.ly_do_huy && (
                               <span className="text-[9px] text-red-400 italic max-w-[100px] truncate block mt-1" title={b.ly_do_huy}>
                                 Lý do: {b.ly_do_huy}
@@ -221,16 +258,24 @@ export default function BookingsAdmin() {
                             <CheckCircle2 size={18}/>
                           </button>
                         )}
+                        
                         {b.trang_thai === "DA_XAC_NHAN" && (
                           <button onClick={() => markComplete(b.id)} className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all shadow-sm" title="Thu tiền">
                             <DollarSign size={18}/>
                           </button>
                         )}
+
+                        {/* NÚT QUẢN LÝ DỊCH VỤ (NƯỚC, ĐỒ THUÊ...) */}
+                        {["CHO_XAC_NHAN", "DA_XAC_NHAN", "DANG_SU_DUNG"].includes(b.trang_thai) && (
+                          <button onClick={() => setServiceTarget(b)} className="p-2 bg-purple-50 text-purple-600 rounded-xl hover:bg-purple-600 hover:text-white transition-all shadow-sm" title="Quản lý dịch vụ">
+                            <ShoppingCart size={18}/>
+                          </button>
+                        )}
+
                         <button onClick={() => setBillTarget(b)} className="p-2 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-900 hover:text-white transition-all shadow-sm" title="Xem Hóa đơn">
                           <Receipt size={18}/>
                         </button>
                         
-                        {/* Nút XÁC NHẬN ĐÃ HOÀN TIỀN (Chỉ hiện khi hủy & có check hoàn tiền & chưa hoàn) */}
                         {b.trang_thai === "HUY" && b.hoan_tien === true && b.invoice?.trang_thai !== "HOAN_TIEN" && (
                           <button onClick={() => handleConfirmRefund(b.id)} className="p-2 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-600 hover:text-white transition-all shadow-sm" title="Xác nhận đã hoàn tiền cho khách">
                             <Undo2 size={18}/>
@@ -252,7 +297,91 @@ export default function BookingsAdmin() {
         </div>
       )}
 
-      {/* Modal Hóa Đơn */}
+      {/* ==== MODAL: QUẢN LÝ DỊCH VỤ ==== */}
+      <AnimatePresence>
+        {serviceTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-card w-full max-w-2xl rounded-3xl border border-border p-8 shadow-2xl">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h3 className="text-2xl font-black uppercase tracking-tight text-primary">Dịch Vụ Kèm Theo</h3>
+                  <div className="text-sm font-bold text-muted-foreground">Đơn đặt sân: {serviceTarget.ma_dat_san} - Khách: {serviceTarget.ten_khach || "Khách lẻ"}</div>
+                </div>
+                <button onClick={() => { setServiceTarget(null); setSelSvcId(""); setSelQty(1); }} className="text-muted-foreground hover:text-foreground bg-secondary/50 p-2 rounded-xl"><X size={24}/></button>
+              </div>
+              
+              <div className="mb-6 bg-secondary/30 rounded-2xl p-4 border border-border shadow-inner">
+                <h4 className="font-bold text-xs mb-3 uppercase text-muted-foreground tracking-widest">Thêm dịch vụ (Bán nước, cho thuê giày...)</h4>
+                <div className="flex gap-3">
+                  <select 
+                    value={selSvcId} 
+                    onChange={e => setSelSvcId(e.target.value)}
+                    className="flex-1 px-4 py-3 rounded-xl border border-input bg-background font-medium outline-none focus:border-primary transition-all shadow-sm"
+                  >
+                    <option value="">-- Chọn dịch vụ --</option>
+                    {allServices.filter(s => s.trang_thai === "HOAT_DONG").map(s => (
+                       <option key={s.id} value={s.id}>
+                         {s.ten_dich_vu} - {formatVND(s.don_gia)} (Tồn kho: {s.ton_kho})
+                       </option>
+                    ))}
+                  </select>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    value={selQty} 
+                    onChange={e => setSelQty(Number(e.target.value))}
+                    className="w-24 px-4 py-3 rounded-xl border border-input bg-background font-bold outline-none text-center focus:border-primary transition-all shadow-sm"
+                  />
+                  <button 
+                    onClick={handleAddService}
+                    className="px-6 bg-primary text-primary-foreground font-black uppercase rounded-xl hover:opacity-90 transition-all flex items-center gap-2 shadow-sm"
+                  >
+                    <Plus size={18}/> Thêm
+                  </button>
+                </div>
+              </div>
+
+              <h4 className="font-bold text-xs mb-3 uppercase text-muted-foreground tracking-widest">Danh sách dịch vụ đã đặt</h4>
+              {serviceTarget.services?.length === 0 ? (
+                <div className="text-center p-6 bg-secondary/20 rounded-2xl text-muted-foreground italic text-sm border border-border border-dashed">Khách chưa đặt dịch vụ nào</div>
+              ) : (
+                <div className="overflow-hidden border border-border rounded-2xl shadow-sm">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-secondary/50 font-bold text-muted-foreground uppercase text-[10px] tracking-wider">
+                      <tr>
+                        <th className="p-4">Tên dịch vụ</th>
+                        <th className="p-4 text-center">Số lượng</th>
+                        <th className="p-4 text-right">Thành tiền</th>
+                        <th className="p-4 text-center">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border bg-background">
+                      {serviceTarget.services.map((s: any) => (
+                         <tr key={s.id} className="hover:bg-secondary/20 transition-colors">
+                           <td className="p-4 font-bold">{s.ten_dich_vu}</td>
+                           <td className="p-4 text-center font-black">{s.so_luong}</td>
+                           <td className="p-4 text-right font-black text-primary">{formatVND(s.thanh_tien)}</td>
+                           <td className="p-4 text-center">
+                             <button onClick={() => handleRemoveService(s.id)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Xóa dịch vụ">
+                               <Trash2 size={16}/>
+                             </button>
+                           </td>
+                         </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="mt-6 flex justify-between items-center border-t border-border pt-4">
+                <span className="font-bold text-sm uppercase text-muted-foreground tracking-widest">Cập nhật lúc</span>
+                <span className="font-black text-lg text-primary">{new Date().toLocaleTimeString('vi-VN')}</span>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ==== MODAL: HÓA ĐƠN ==== */}
       <AnimatePresence>
         {billTarget && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
@@ -303,8 +432,10 @@ export default function BookingsAdmin() {
             </motion.div>
           </div>
         )}
+      </AnimatePresence>
 
-        {/* Modal Hủy Đơn */}
+      {/* ==== MODAL: HỦY ĐƠN ==== */}
+      <AnimatePresence>
         {cancelTarget && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-card w-full max-w-md rounded-3xl border border-border p-8 shadow-2xl">
