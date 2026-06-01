@@ -84,16 +84,25 @@ def feedback_stats(
     """Thống kê đánh giá trung bình"""
     feedbacks = db.query(Feedback).all()
     if not feedbacks:
-        return {"tong_so": 0, "trung_binh": 0, "phan_bo": {}, "canh_bao": 0}
+        # Nhớ bổ sung thêm key "hai_long" vào đây để không bị lỗi khi chưa có đánh giá nào
+        return {"tong_so": 0, "trung_binh": 0, "phan_bo": {}, "canh_bao": 0, "hai_long": 0}
+        
     total = len(feedbacks)
     avg = sum(f.danh_gia_tong for f in feedbacks) / total
+    
     dist = {i: 0 for i in range(1, 6)}
     for f in feedbacks:
         dist[f.danh_gia_tong] += 1
+        
     warn = sum(1 for f in feedbacks if f.danh_gia_tong < 3)
+    
+    # BỔ SUNG: Tính số lượng khách hàng hài lòng (>= 4 sao)
+    hai_long = sum(1 for f in feedbacks if f.danh_gia_tong >= 4)
+    
     return {
         "tong_so": total,
         "trung_binh": round(avg, 2),
         "phan_bo": dist,
         "canh_bao": warn,
+        "hai_long": hai_long, # Trả về biến này cho Frontend hứng
     }
