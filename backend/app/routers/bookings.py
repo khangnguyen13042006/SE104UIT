@@ -334,7 +334,7 @@ def cancel_booking(
 
     # Update invoice
     if b.invoice:
-        if b.invoice.trang_thai == PaymentStatus.DA_THANH_TOAN and refund_rate > 0:
+        if refund_rate > 0:
             # Đặt trạng thái CHỜ HOÀN TIỀN, staff phải confirm bằng action riêng
             b.invoice.trang_thai = PaymentStatus.CHO_HOAN_TIEN
             refund_amount = (b.invoice.tong_cong * Decimal(str(refund_rate))).quantize(Decimal("1"))
@@ -391,8 +391,8 @@ def confirm_refund(
         raise HTTPException(400, "Chỉ booking đã hủy mới có thể xác nhận hoàn tiền")
     if not b.invoice:
         raise HTTPException(400, "Booking không có hóa đơn")
-    if b.invoice.trang_thai != PaymentStatus.CHO_HOAN_TIEN:
-        raise HTTPException(400, f"Hóa đơn không ở trạng thái chờ hoàn tiền (hiện: {b.invoice.trang_thai})")
+    #if b.invoice.trang_thai != PaymentStatus.CHO_HOAN_TIEN:
+        #raise HTTPException(400, f"Hóa đơn không ở trạng thái chờ hoàn tiền (hiện: {b.invoice.trang_thai})")
 
     b.invoice.trang_thai = PaymentStatus.HOAN_TIEN
     note = f"[XÁC NHẬN HOÀN TIỀN {datetime.now().strftime('%H:%M %d/%m/%Y')} bởi {user.ho_ten}]"
