@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { apiGet, apiPost, formatVND, formatDate } from "@/lib/api";
 import {
   Loader2, CheckCircle2, DollarSign, Search, X, Calendar,
-  Filter, Clock, XCircle, RotateCcw, Receipt, User, Phone, MapPin, Sparkles
+  Filter, Clock, XCircle, RotateCcw, Receipt, User, Phone, MapPin, Sparkles, Undo2
 } from "lucide-react";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
@@ -24,11 +24,12 @@ export default function BookingsAdmin() {
   const [billTarget, setBillTarget] = useState<any>(null);
   const [cancelTarget, setCancelTarget] = useState<any>(null);
   const [lyDoHuy, setLyDoHuy] = useState("");
+  // State quản lý việc có hoàn tiền hay không
+  const [isRefund, setIsRefund] = useState(false);
 
   async function load() {
     setLoading(true);
     try {
-      // Chạy task dọn dẹp đơn quá hạn trước khi load
       await apiPost("/api/bookings/run-auto-tasks", {});
       const data = await apiGet("/api/bookings");
       setList(Array.isArray(data) ? data : []);
@@ -64,11 +65,27 @@ export default function BookingsAdmin() {
     } catch (e: any) { alert(e.message); }
   }
 
+  // Gọi API hủy đơn kèm lựa chọn hoàn tiền
   async function handleCancel() {
     if (!lyDoHuy.trim()) return alert("Vui lòng nhập lý do hủy để lưu lịch sử");
     try {
-      await apiPost(`/api/bookings/${cancelTarget.id}/cancel`, { ly_do_huy: lyDoHuy });
-      setCancelTarget(null); setLyDoHuy(""); load();
+      await apiPost(`/api/bookings/${cancelTarget.id}/cancel`, { 
+        ly_do_huy: lyDoHuy,
+        hoan_tien: isRefund 
+      });
+      setCancelTarget(null); 
+      setLyDoHuy(""); 
+      setIsRefund(false);
+      load();
+    } catch (e: any) { alert(e.message); }
+  }
+
+  // Gọi API xác nhận đã hoàn tiền
+  async function handleConfirmRefund(id: number) {
+    if (!confirm("Xác nhận bạn đã chuyển khoản hoàn trả tiền cho khách?")) return;
+    try {
+      await apiPost(`/api/bookings/${id}/confirm-refund`, {});
+      load();
     } catch (e: any) { alert(e.message); }
   }
 
@@ -84,7 +101,6 @@ export default function BookingsAdmin() {
         </button>
       </div>
 
-      {/* Bộ lọc */}
       <div className="flex flex-wrap gap-3 bg-card p-4 rounded-3xl border border-border shadow-sm">
         <div className="relative flex-1 min-w-[280px]">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -148,7 +164,7 @@ export default function BookingsAdmin() {
                         {b.ngay_tao ? (
                           (() => {
                             const d = new Date(b.ngay_tao);
-                            d.setHours(d.getHours() + 7); // Múi giờ VN
+                            d.setHours(d.getHours() + 7); 
                             return d.toLocaleString('vi-VN', {
                               hour: '2-digit', minute: '2-digit',
                               day: '2-digit', month: '2-digit', year: 'numeric',
@@ -160,7 +176,6 @@ export default function BookingsAdmin() {
                     </td>
                     <td className="p-5 text-right">
                       <div className="font-black text-foreground">
-                        {/* Ưu tiên hiện số tiền cuối cùng của hóa đơn */}
                         {formatVND(b.invoice?.tong_cong || b.tien_san)}
                       </div>
                       {b.invoice?.giam_gia > 0 && (
@@ -174,10 +189,26 @@ export default function BookingsAdmin() {
                         <span className={`px-3 py-1 rounded-full text-[10px] font-black border uppercase tracking-tighter ${STATUS_LABEL[b.trang_thai]?.cls}`}>
                           {STATUS_LABEL[b.trang_thai]?.text}
                         </span>
-                        {b.trang_thai === "HUY" && b.ly_do_huy && (
-                          <span className="text-[9px] text-red-400 italic max-w-[100px] truncate" title={b.ly_do_huy}>
-                            Lý do: {b.ly_do_huy}
-                          </span>
+                        
+                        {/* TAG Hiển thị trạng thái hoàn tiền */}
+                        {b.trang_thai === "HUY" && (
+                          <>
+                            {b.invoice?.trang_thai === "CHO_HOAN_TIEN" && (
+                              <span className="text-[9px] font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200">
+                                ⏳ Chờ hoàn tiền
+                              </span>
+                            )}
+                            {b.invoice?.trang_thai === "HOAN_TIEN" && (
+                              <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
+                                ✅ Đã hoàn tiền
+                              </span>
+                            )}
+                            {b.ly_do_huy && (
+                              <span className="text-[9px] text-red-400 italic max-w-[100px] truncate block mt-1" title={b.ly_do_huy}>
+                                Lý do: {b.ly_do_huy}
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
                     </td>
@@ -196,6 +227,14 @@ export default function BookingsAdmin() {
                         <button onClick={() => setBillTarget(b)} className="p-2 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-900 hover:text-white transition-all shadow-sm" title="Xem Hóa đơn">
                           <Receipt size={18}/>
                         </button>
+                        
+                        {/* Nút xác nhận hoàn tiền */}
+                        {b.invoice?.trang_thai === "CHO_HOAN_TIEN" && (
+                          <button onClick={() => handleConfirmRefund(b.id)} className="p-2 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-600 hover:text-white transition-all shadow-sm" title="Đã chuyển khoản hoàn tiền">
+                            <Undo2 size={18}/>
+                          </button>
+                        )}
+
                         {["CHO_XAC_NHAN", "DA_XAC_NHAN"].includes(b.trang_thai) && (
                           <button onClick={() => setCancelTarget(b)} className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all shadow-sm" title="Hủy đơn">
                             <XCircle size={18}/>
@@ -211,7 +250,7 @@ export default function BookingsAdmin() {
         </div>
       )}
 
-      {/* Modal Hóa Đơn (Đã nâng cấp logic hiển thị chiết khấu) */}
+      {/* Modal Hóa Đơn */}
       <AnimatePresence>
         {billTarget && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
@@ -248,7 +287,6 @@ export default function BookingsAdmin() {
                       </tr>
                     ))}
 
-                    {/* DÒNG GIẢM GIÁ (Nếu có) */}
                     {billTarget.invoice?.giam_gia > 0 && (
                       <tr className="text-primary font-bold">
                         <td className="py-3 italic flex items-center gap-1"><Sparkles size={14}/> Giảm giá thành viên</td>
@@ -275,20 +313,44 @@ export default function BookingsAdmin() {
           </div>
         )}
 
-        {/* Modal Hủy Đơn */}
+        {/* Modal Hủy Đơn Tích Hợp Chọn Hoàn Tiền */}
         {cancelTarget && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-card w-full max-w-md rounded-3xl border border-border p-8 shadow-2xl">
               <h3 className="text-2xl font-black mb-2 uppercase italic text-red-600">Hủy đơn đặt sân</h3>
               <p className="text-muted-foreground text-sm mb-6">Mọi dịch vụ và tồn kho sẽ được hoàn trả tự động sau khi hủy.</p>
+              
               <textarea 
                 value={lyDoHuy} 
                 onChange={e => setLyDoHuy(e.target.value)} 
                 placeholder="Ví dụ: Khách báo bận đột xuất, lỗi trùng lịch..." 
-                className="w-full p-4 rounded-2xl bg-secondary/50 border border-border outline-none min-h-[120px] mb-6 focus:border-red-500 transition-all font-medium shadow-inner" 
+                className="w-full p-4 rounded-2xl bg-secondary/50 border border-border outline-none min-h-[100px] mb-4 focus:border-red-500 transition-all font-medium shadow-inner" 
               />
+
+              {/* Lựa chọn hoàn tiền */}
+              <div className="flex gap-6 mb-6 px-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    checked={isRefund === true} 
+                    onChange={() => setIsRefund(true)} 
+                    className="w-4 h-4 accent-red-600" 
+                  />
+                  <span className="text-sm font-bold text-foreground">Có hoàn tiền (50%)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    checked={isRefund === false} 
+                    onChange={() => setIsRefund(false)} 
+                    className="w-4 h-4 accent-red-600" 
+                  />
+                  <span className="text-sm font-bold text-foreground">Không hoàn tiền</span>
+                </label>
+              </div>
+
               <div className="flex gap-3">
-                <button onClick={() => { setCancelTarget(null); setLyDoHuy(""); }} className="flex-1 py-4 font-bold hover:bg-secondary rounded-2xl transition-all">Quay lại</button>
+                <button onClick={() => { setCancelTarget(null); setLyDoHuy(""); setIsRefund(false); }} className="flex-1 py-4 font-bold hover:bg-secondary rounded-2xl transition-all">Quay lại</button>
                 <button onClick={handleCancel} className="flex-1 py-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-red-600/20 active:scale-95 transition-all">Xác nhận hủy</button>
               </div>
             </motion.div>
