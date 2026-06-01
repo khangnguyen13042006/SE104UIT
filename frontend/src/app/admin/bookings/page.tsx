@@ -24,7 +24,6 @@ export default function BookingsAdmin() {
   const [billTarget, setBillTarget] = useState<any>(null);
   const [cancelTarget, setCancelTarget] = useState<any>(null);
   const [lyDoHuy, setLyDoHuy] = useState("");
-  // State quản lý việc có hoàn tiền hay không
   const [isRefund, setIsRefund] = useState(false);
 
   async function load() {
@@ -65,7 +64,6 @@ export default function BookingsAdmin() {
     } catch (e: any) { alert(e.message); }
   }
 
-  // Gọi API hủy đơn kèm lựa chọn hoàn tiền
   async function handleCancel() {
     if (!lyDoHuy.trim()) return alert("Vui lòng nhập lý do hủy để lưu lịch sử");
     try {
@@ -80,9 +78,9 @@ export default function BookingsAdmin() {
     } catch (e: any) { alert(e.message); }
   }
 
-  // Gọi API xác nhận đã hoàn tiền
+  // API xác nhận đã hoàn tiền cho khách
   async function handleConfirmRefund(id: number) {
-    if (!confirm("Xác nhận bạn đã chuyển khoản hoàn trả tiền cho khách?")) return;
+    if (!confirm("Xác nhận bạn đã chuyển khoản hoàn trả 50% tiền cọc cho khách?")) return;
     try {
       await apiPost(`/api/bookings/${id}/confirm-refund`, {});
       load();
@@ -190,19 +188,25 @@ export default function BookingsAdmin() {
                           {STATUS_LABEL[b.trang_thai]?.text}
                         </span>
                         
-                        {/* TAG Hiển thị trạng thái hoàn tiền */}
+                        {/* TAG Hiển thị trạng thái hoàn tiền rất rõ ràng */}
                         {b.trang_thai === "HUY" && (
                           <>
-                            {b.invoice?.trang_thai === "CHO_HOAN_TIEN" && (
-                              <span className="text-[9px] font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200">
-                                ⏳ Chờ hoàn tiền
+                            {b.hoan_tien === false && (
+                              <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200 mt-1 whitespace-nowrap">
+                                ❌ Không hoàn tiền
                               </span>
                             )}
-                            {b.invoice?.trang_thai === "HOAN_TIEN" && (
-                              <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
-                                ✅ Đã hoàn tiền
+                            {b.hoan_tien === true && b.invoice?.trang_thai === "CHO_HOAN_TIEN" && (
+                              <span className="text-[9px] font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200 mt-1 whitespace-nowrap">
+                                ⏳ Chưa hoàn tiền (50%)
                               </span>
                             )}
+                            {b.hoan_tien === true && b.invoice?.trang_thai === "HOAN_TIEN" && (
+                              <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200 mt-1 whitespace-nowrap">
+                                ✅ Đã hoàn tiền (50%)
+                              </span>
+                            )}
+                            
                             {b.ly_do_huy && (
                               <span className="text-[9px] text-red-400 italic max-w-[100px] truncate block mt-1" title={b.ly_do_huy}>
                                 Lý do: {b.ly_do_huy}
@@ -228,9 +232,9 @@ export default function BookingsAdmin() {
                           <Receipt size={18}/>
                         </button>
                         
-                        {/* Nút xác nhận hoàn tiền */}
-                        {b.invoice?.trang_thai === "CHO_HOAN_TIEN" && (
-                          <button onClick={() => handleConfirmRefund(b.id)} className="p-2 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-600 hover:text-white transition-all shadow-sm" title="Đã chuyển khoản hoàn tiền">
+                        {/* Nút XÁC NHẬN ĐÃ HOÀN TIỀN (Chỉ hiện khi chưa hoàn) */}
+                        {b.trang_thai === "HUY" && b.hoan_tien === true && b.invoice?.trang_thai === "CHO_HOAN_TIEN" && (
+                          <button onClick={() => handleConfirmRefund(b.id)} className="p-2 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-600 hover:text-white transition-all shadow-sm" title="Xác nhận đã hoàn tiền cho khách">
                             <Undo2 size={18}/>
                           </button>
                         )}
@@ -313,7 +317,7 @@ export default function BookingsAdmin() {
           </div>
         )}
 
-        {/* Modal Hủy Đơn Tích Hợp Chọn Hoàn Tiền */}
+        {/* Modal Hủy Đơn */}
         {cancelTarget && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-card w-full max-w-md rounded-3xl border border-border p-8 shadow-2xl">
@@ -327,7 +331,7 @@ export default function BookingsAdmin() {
                 className="w-full p-4 rounded-2xl bg-secondary/50 border border-border outline-none min-h-[100px] mb-4 focus:border-red-500 transition-all font-medium shadow-inner" 
               />
 
-              {/* Lựa chọn hoàn tiền */}
+              {/* Tùy chọn dành riêng cho Nhân viên nếu muốn sửa luật 24h bằng tay */}
               <div className="flex gap-6 mb-6 px-2">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input 
