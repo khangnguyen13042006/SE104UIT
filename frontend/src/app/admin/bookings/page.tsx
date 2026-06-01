@@ -4,8 +4,7 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiGet, apiPost, formatVND, formatDate } from "@/lib/api";
 import {
-  Loader2, CheckCircle2, DollarSign, Search, X, Calendar,
-  Filter, Clock, XCircle, RotateCcw, Receipt, User, Phone, MapPin, Sparkles, Undo2
+  Loader2, CheckCircle2, DollarSign, Search, X, Clock, XCircle, RotateCcw, Receipt, Sparkles, Undo2
 } from "lucide-react";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
@@ -78,7 +77,6 @@ export default function BookingsAdmin() {
     } catch (e: any) { alert(e.message); }
   }
 
-  // API xác nhận đã hoàn tiền cho khách
   async function handleConfirmRefund(id: number) {
     if (!confirm("Xác nhận bạn đã chuyển khoản hoàn trả 50% tiền cọc cho khách?")) return;
     try {
@@ -188,7 +186,7 @@ export default function BookingsAdmin() {
                           {STATUS_LABEL[b.trang_thai]?.text}
                         </span>
                         
-                        {/* TAG Hiển thị trạng thái hoàn tiền rất rõ ràng */}
+                        {/* TAG Hiển thị trạng thái hoàn tiền (KHÔNG phụ thuộc vào CHO_HOAN_TIEN cứng của backend) */}
                         {b.trang_thai === "HUY" && (
                           <>
                             {b.hoan_tien === false && (
@@ -196,7 +194,7 @@ export default function BookingsAdmin() {
                                 ❌ Không hoàn tiền
                               </span>
                             )}
-                            {b.hoan_tien === true && b.invoice?.trang_thai === "CHO_HOAN_TIEN" && (
+                            {b.hoan_tien === true && b.invoice?.trang_thai !== "HOAN_TIEN" && (
                               <span className="text-[9px] font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200 mt-1 whitespace-nowrap">
                                 ⏳ Chưa hoàn tiền (50%)
                               </span>
@@ -232,8 +230,8 @@ export default function BookingsAdmin() {
                           <Receipt size={18}/>
                         </button>
                         
-                        {/* Nút XÁC NHẬN ĐÃ HOÀN TIỀN (Chỉ hiện khi chưa hoàn) */}
-                        {b.trang_thai === "HUY" && b.hoan_tien === true && b.invoice?.trang_thai === "CHO_HOAN_TIEN" && (
+                        {/* Nút XÁC NHẬN ĐÃ HOÀN TIỀN (Chỉ hiện khi hủy & có check hoàn tiền & chưa hoàn) */}
+                        {b.trang_thai === "HUY" && b.hoan_tien === true && b.invoice?.trang_thai !== "HOAN_TIEN" && (
                           <button onClick={() => handleConfirmRefund(b.id)} className="p-2 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-600 hover:text-white transition-all shadow-sm" title="Xác nhận đã hoàn tiền cho khách">
                             <Undo2 size={18}/>
                           </button>
@@ -290,28 +288,17 @@ export default function BookingsAdmin() {
                         <td className="py-3 text-right font-bold">{formatVND(s.thanh_tien)}</td>
                       </tr>
                     ))}
-
-                    {billTarget.invoice?.giam_gia > 0 && (
-                      <tr className="text-primary font-bold">
-                        <td className="py-3 italic flex items-center gap-1"><Sparkles size={14}/> Giảm giá thành viên</td>
-                        <td className="py-3 text-right">-{formatVND(billTarget.invoice.giam_gia)}</td>
-                      </tr>
-                    )}
                   </tbody>
                 </table>
-
                 <div className="pt-6 border-t-2 border-slate-900 flex justify-between items-center">
                   <span className="font-black uppercase text-sm">Tổng cộng</span>
                   <span className="text-3xl font-black text-primary">
                     {formatVND(billTarget.invoice?.tong_cong || billTarget.tien_san)}
                   </span>
                 </div>
-                
                 <div className="flex gap-2 no-print">
-                    <button onClick={() => window.print()} className="flex-1 py-4 bg-slate-900 text-white font-black text-xs uppercase tracking-[0.2em] hover:bg-primary transition-colors">In hóa đơn</button>
-                    <button onClick={() => setBillTarget(null)} className="px-6 py-4 border border-slate-200 font-bold text-xs uppercase">Đóng</button>
+                    <button onClick={() => setBillTarget(null)} className="w-full py-4 bg-slate-900 text-white font-black text-xs uppercase tracking-[0.2em] hover:bg-primary transition-colors">Đóng Hóa Đơn</button>
                 </div>
-                <div className="text-center text-[10px] text-slate-400 italic">Cảm ơn quý khách đã tin tưởng KICKOFF!</div>
               </div>
             </motion.div>
           </div>
@@ -331,7 +318,6 @@ export default function BookingsAdmin() {
                 className="w-full p-4 rounded-2xl bg-secondary/50 border border-border outline-none min-h-[100px] mb-4 focus:border-red-500 transition-all font-medium shadow-inner" 
               />
 
-              {/* Tùy chọn dành riêng cho Nhân viên nếu muốn sửa luật 24h bằng tay */}
               <div className="flex gap-6 mb-6 px-2">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input 
