@@ -81,6 +81,15 @@ export default function BookingPage() {
   }, [selectedDate]);
 
   useEffect(() => {
+    // 1. Kiểm tra đăng nhập TRƯỚC KHI load dữ liệu sân
+    const u = getUser();
+    if (!u) {
+      alert("Vui lòng đăng nhập tài khoản để tiếp tục đặt sân!");
+      router.push("/login");
+      return; // Dừng luôn việc tải dữ liệu bên dưới
+    }
+
+    // 2. Load dữ liệu sân và dịch vụ
     Promise.all([
       apiGet("/api/fields?trang_thai=HOAT_DONG"),
       apiGet("/api/services?trang_thai=HOAT_DONG"),
@@ -94,6 +103,20 @@ export default function BookingPage() {
       .catch((e: any) => {
         setLoadErr(e.message?.includes("Failed to fetch") ? "Không kết nối được tới backend." : `Lỗi: ${e.message}`);
       });
+
+    // 3. Nạp thông tin người dùng và thẻ thành viên vào form
+    apiGet("/api/memberships/me/status")
+      .then((s) => setMemberStatus({
+        tier: s.tier,
+        tier_name: s.tier_name,
+        discount_percent: s.discount_percent,
+      }))
+      .catch(() => {});
+      
+    setTenKhach(u.ho_ten || "");
+    setSdtKhach(u.sdt || "");
+    setEmailKhach(u.email || "");
+  }, [router]); // Đừng quên thêm router vào dependency array
 
     const u = getUser();
     if (u) {
