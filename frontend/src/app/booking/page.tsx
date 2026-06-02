@@ -117,18 +117,7 @@ export default function BookingPage() {
     setSdtKhach(u.sdt || "");
     setEmailKhach(u.email || "");
   }, [router]);
-    const u = getUser();
-    if (u) {
-      apiGet("/api/memberships/me/status").then((s) => setMemberStatus({
-          tier: s.tier,
-          tier_name: s.tier_name,
-          discount_percent: s.discount_percent,
-      })).catch(() => {});
-      setTenKhach(u.ho_ten || "");
-      setSdtKhach(u.sdt || "");
-      setEmailKhach(u.email || "");
-    }
-  }, []);
+    
 
   useEffect(() => {
     if (!activeField) return;
