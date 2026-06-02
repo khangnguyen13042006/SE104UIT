@@ -116,8 +116,7 @@ export default function BookingPage() {
     setTenKhach(u.ho_ten || "");
     setSdtKhach(u.sdt || "");
     setEmailKhach(u.email || "");
-  }, [router]); // Đừng quên thêm router vào dependency array
-
+  }, [router]);
     const u = getUser();
     if (u) {
       apiGet("/api/memberships/me/status").then((s) => setMemberStatus({
