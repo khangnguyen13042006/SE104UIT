@@ -147,6 +147,19 @@ function SortButton({ active, onClick, children }: any) {
   );
 }
 
+// 1. Thêm hàm formatVNTime để cộng 7 tiếng
+function formatVNTime(dateString: string) {
+  if (!dateString) return "";
+  const d = new Date(dateString);
+  d.setHours(d.getHours() + 7); // Cộng thêm 7 tiếng cho khớp giờ VN
+  return d.toLocaleString('vi-VN', {
+    hour: '2-digit', minute: '2-digit',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour12: false
+  });
+}
+
+// 2. Cập nhật lại FeedbackItem sử dụng formatVNTime thay cho formatDateTime cũ
 function FeedbackItem({ f, delay }: { f: any; delay: number }) {
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay }}
@@ -158,7 +171,8 @@ function FeedbackItem({ f, delay }: { f: any; delay: number }) {
           </div>
           <div>
             <div className="font-bold text-foreground">{f.ten_khach || "Khách ẩn danh"}</div>
-            <div className="text-xs text-muted-foreground">{f.ten_san} • {formatDateTime(f.ngay_tao)}</div>
+            {/* Sử dụng hàm formatVNTime ở đây */}
+            <div className="text-xs text-muted-foreground">{f.ten_san} • {formatVNTime(f.ngay_tao)}</div>
           </div>
         </div>
         <div className="flex gap-0.5">
