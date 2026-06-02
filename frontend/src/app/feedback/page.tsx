@@ -1,14 +1,17 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import { apiGet, formatDateTime } from "@/lib/api";
-import { Star, Loader2, MessageSquare } from "lucide-react";
+import { Star, Loader2, MessageSquare, ArrowUpDown } from "lucide-react";
+
+type SortOption = "newest" | "oldest" | "highest" | "lowest";
 
 export default function FeedbackPage() {
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("");
+  const [sort, setSort] = useState<SortOption>("newest");
 
   async function load() {
     setLoading(true);
@@ -24,6 +27,18 @@ export default function FeedbackPage() {
   }
 
   useEffect(() => { load(); }, [filter]);
+
+  // Client-side sort: Tự động sắp xếp lại danh sách
+  const sortedList = useMemo(() => {
+    const arr = [...list];
+    switch (sort) {
+      case "newest": arr.sort((a, b) => new Date(b.ngay_tao).getTime() - new Date(a.ngay_tao).getTime()); break;
+      case "oldest": arr.sort((a, b) => new Date(a.ngay_tao).getTime() - new Date(b.ngay_tao).getTime()); break;
+      case "highest": arr.sort((a, b) => b.danh_gia_tong - a.danh_gia_tong || new Date(b.ngay_tao).getTime() - new Date(a.ngay_tao).getTime()); break;
+      case "lowest": arr.sort((a, b) => a.danh_gia_tong - b.danh_gia_tong || new Date(b.ngay_tao).getTime() - new Date(a.ngay_tao).getTime()); break;
+    }
+    return arr;
+  }, [list, sort]);
 
   const avg = list.length ? (list.reduce((s, f) => s + f.danh_gia_tong, 0) / list.length).toFixed(1) : "—";
 
@@ -83,23 +98,52 @@ export default function FeedbackPage() {
                 ))}
               </div>
             </div>
+
+            {/* Sort Options */}
+            <div className="mt-5 pt-5 border-t border-white/10">
+              <div className="flex items-center gap-2 mb-2">
+                <ArrowUpDown className="w-4 h-4 text-sidebar-foreground/50" />
+                <span className="text-xs font-bold text-sidebar-foreground/50 uppercase tracking-wider">Sắp xếp theo</span>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <SortButton active={sort === "newest"} onClick={() => setSort("newest")}>Mới nhất</SortButton>
+                <SortButton active={sort === "oldest"} onClick={() => setSort("oldest")}>Cũ nhất</SortButton>
+                <SortButton active={sort === "highest"} onClick={() => setSort("highest")}>Điểm cao nhất</SortButton>
+                <SortButton active={sort === "lowest"} onClick={() => setSort("lowest")}>Điểm thấp nhất</SortButton>
+              </div>
+            </div>
+            
           </div>
         </motion.div>
 
         {loading ? (
           <div className="p-16 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" /></div>
-        ) : list.length === 0 ? (
+        ) : sortedList.length === 0 ? (
           <div className="bg-card rounded-3xl p-16 text-center border border-border">
             <MessageSquare className="w-16 h-16 mx-auto mb-4 text-muted-foreground/30" />
             <p className="text-muted-foreground">Chưa có đánh giá nào{filter ? ` cho ${filter} sao` : ""}</p>
           </div>
         ) : (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="space-y-3">
-            {list.map((f, i) => <FeedbackItem key={f.id} f={f} delay={i * 0.05} />)}
+            {sortedList.map((f, i) => <FeedbackItem key={f.id} f={f} delay={i * 0.05} />)}
           </motion.div>
         )}
       </div>
     </>
+  );
+}
+
+// Component phụ cho nút Sắp xếp để code gọn gàng hơn
+function SortButton({ active, onClick, children }: any) {
+  return (
+    <button onClick={onClick}
+      className={`px-4 py-2 rounded-2xl text-sm font-semibold transition-all ${
+        active
+          ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30"
+          : "bg-white/10 hover:bg-white/20 text-sidebar-foreground"
+      }`}>
+      {children}
+    </button>
   );
 }
 
