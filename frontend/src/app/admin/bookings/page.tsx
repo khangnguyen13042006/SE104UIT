@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { apiGet, apiPost, apiDelete, formatVND, formatDate } from "@/lib/api";
+import { apiGet, apiPost, apiDelete, formatVND, formatDate, getUser } from "@/lib/api";
 import {
   Loader2, CheckCircle2, DollarSign, Search, X, Clock, XCircle, 
   RotateCcw, Receipt, Sparkles, Undo2, ShoppingCart, Trash2, Plus
@@ -22,6 +22,7 @@ export default function BookingsAdmin() {
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [user, setUser] = useState<any>(null); // Thêm state lưu User
   
   // States cho Modal
   const [billTarget, setBillTarget] = useState<any>(null);
@@ -36,13 +37,17 @@ export default function BookingsAdmin() {
   const [selSvcId, setSelSvcId] = useState("");
   const [selQty, setSelQty] = useState(1);
 
+  // Phân quyền hiển thị
+  const isManager = user && ["ADMIN", "QUAN_LY"].includes(user.vai_tro);
+
   async function load() {
     setLoading(true);
     try {
+      setUser(getUser()); // Lấy thông tin user khi load trang
       await apiPost("/api/bookings/run-auto-tasks", {});
       const [bData, sData] = await Promise.all([
         apiGet("/api/bookings"),
-        apiGet("/api/services") // Lấy danh sách dịch vụ để chọn
+        apiGet("/api/services") 
       ]);
       setList(Array.isArray(bData) ? bData : []);
       setAllServices(Array.isArray(sData) ? sData : (sData?.data || []));
@@ -81,10 +86,11 @@ export default function BookingsAdmin() {
   async function handleCancel() {
     if (!lyDoHuy.trim()) return alert("Vui lòng nhập lý do hủy để lưu lịch sử");
     try {
-      await apiPost(`/api/bookings/${cancelTarget.id}/cancel`, { 
-        ly_do_huy: lyDoHuy,
-        hoan_tien: isRefund 
-      });
+      // Nếu là Quản lý/Admin -> Gửi kèm cờ hoan_tien để ghi đè. Nếu là NV -> Giao cho backend tự tính 24h
+      const payload: any = { ly_do_huy: lyDoHuy };
+      if (isManager) payload.hoan_tien = isRefund;
+
+      await apiPost(`/api/bookings/${cancelTarget.id}/cancel`, payload);
       setCancelTarget(null); 
       setLyDoHuy(""); 
       setIsRefund(false);
@@ -100,7 +106,6 @@ export default function BookingsAdmin() {
     } catch (e: any) { alert(e.message); }
   }
 
-  // ==== XỬ LÝ DỊCH VỤ (THÊM / XÓA) ====
   async function handleAddService() {
     if (!selSvcId || selQty <= 0) return alert("Vui lòng chọn dịch vụ và số lượng lớn hơn 0");
     try {
@@ -108,7 +113,6 @@ export default function BookingsAdmin() {
         dich_vu_id: parseInt(selSvcId),
         so_luong: selQty
       });
-      // Cập nhật lại target modal và list bên ngoài để UI nhảy số tiền ngay
       setServiceTarget(updatedBooking);
       setList(prev => prev.map(b => b.id === updatedBooking.id ? updatedBooking : b));
       setSelQty(1);
@@ -265,7 +269,6 @@ export default function BookingsAdmin() {
                           </button>
                         )}
 
-                        {/* NÚT QUẢN LÝ DỊCH VỤ (NƯỚC, ĐỒ THUÊ...) */}
                         {["CHO_XAC_NHAN", "DA_XAC_NHAN", "DANG_SU_DUNG"].includes(b.trang_thai) && (
                           <button onClick={() => setServiceTarget(b)} className="p-2 bg-purple-50 text-purple-600 rounded-xl hover:bg-purple-600 hover:text-white transition-all shadow-sm" title="Quản lý dịch vụ">
                             <ShoppingCart size={18}/>
@@ -276,7 +279,8 @@ export default function BookingsAdmin() {
                           <Receipt size={18}/>
                         </button>
                         
-                        {b.trang_thai === "HUY" && b.hoan_tien === true && b.invoice?.trang_thai !== "HOAN_TIEN" && (
+                        {/* CHỈ HIỂN THỊ NÚT NÀY CHO ADMIN/QUẢN LÝ */}
+                        {isManager && b.trang_thai === "HUY" && b.hoan_tien === true && b.invoice?.trang_thai !== "HOAN_TIEN" && (
                           <button onClick={() => handleConfirmRefund(b.id)} className="p-2 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-600 hover:text-white transition-all shadow-sm" title="Xác nhận đã hoàn tiền cho khách">
                             <Undo2 size={18}/>
                           </button>
@@ -449,26 +453,35 @@ export default function BookingsAdmin() {
                 className="w-full p-4 rounded-2xl bg-secondary/50 border border-border outline-none min-h-[100px] mb-4 focus:border-red-500 transition-all font-medium shadow-inner" 
               />
 
-              <div className="flex gap-6 mb-6 px-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input 
-                    type="radio" 
-                    checked={isRefund === true} 
-                    onChange={() => setIsRefund(true)} 
-                    className="w-4 h-4 accent-red-600" 
-                  />
-                  <span className="text-sm font-bold text-foreground">Có hoàn tiền (50%)</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input 
-                    type="radio" 
-                    checked={isRefund === false} 
-                    onChange={() => setIsRefund(false)} 
-                    className="w-4 h-4 accent-red-600" 
-                  />
-                  <span className="text-sm font-bold text-foreground">Không hoàn tiền</span>
-                </label>
-              </div>
+              {/* CHỈ HIỂN THỊ TÙY CHỌN HOÀN TIỀN CHO ADMIN/QUẢN LÝ */}
+              {isManager ? (
+                <div className="flex gap-6 mb-6 px-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="radio" 
+                      checked={isRefund === true} 
+                      onChange={() => setIsRefund(true)} 
+                      className="w-4 h-4 accent-red-600" 
+                    />
+                    <span className="text-sm font-bold text-foreground">Có hoàn tiền (50%)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="radio" 
+                      checked={isRefund === false} 
+                      onChange={() => setIsRefund(false)} 
+                      className="w-4 h-4 accent-red-600" 
+                    />
+                    <span className="text-sm font-bold text-foreground">Không hoàn tiền</span>
+                  </label>
+                </div>
+              ) : (
+                <div className="mb-6 px-2">
+                  <p className="text-sm text-orange-600 font-bold bg-orange-50 p-3 rounded-xl">
+                    Hệ thống sẽ tự động tính toán hoàn tiền theo quy định (Hủy trước 24h).
+                  </p>
+                </div>
+              )}
 
               <div className="flex gap-3">
                 <button onClick={() => { setCancelTarget(null); setLyDoHuy(""); setIsRefund(false); }} className="flex-1 py-4 font-bold hover:bg-secondary rounded-2xl transition-all">Quay lại</button>
