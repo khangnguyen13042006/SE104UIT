@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation"; // Thêm hook chuyển trang
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
+import { getUser } from "@/lib/api"; // Thêm hàm lấy user
 import { 
   ArrowRight, Calendar, Clock, Shield, Star, 
   Zap, Users, MapPin, Sparkles, ChevronRight
@@ -23,6 +25,20 @@ const STATS = [
 ];
 
 export default function HomePage() {
+  const router = useRouter();
+
+  // Hàm kiểm tra đăng nhập khi bấm Đặt sân
+  const handleBookingClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const user = getUser();
+    if (!user) {
+      alert("Vui lòng đăng nhập tài khoản để tiếp tục đặt sân!");
+      router.push("/login");
+    } else {
+      router.push("/booking");
+    }
+  };
+
   return (
     <>
       <Navbar />
@@ -45,10 +61,15 @@ export default function HomePage() {
                 Xem lịch trống real-time, chọn khung giờ, thanh toán QR — chỉ trong 3 bước. Không gọi điện, không chờ xác nhận.
               </p>
               <div className="flex flex-wrap gap-4">
-                <Link href="/booking" className="group inline-flex items-center gap-2 px-6 py-4 bg-primary text-primary-foreground rounded-2xl font-semibold shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:scale-105 transition-all duration-300">
+                {/* Đã thay đổi thẻ Link thành Button gọi hàm kiểm tra */}
+                <button 
+                  onClick={handleBookingClick} 
+                  className="group inline-flex items-center gap-2 px-6 py-4 bg-primary text-primary-foreground rounded-2xl font-semibold shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:scale-105 transition-all duration-300"
+                >
                   <span>Đặt sân ngay</span>
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                </Link>
+                </button>
+                
                 <Link href="/register" className="inline-flex items-center gap-2 px-6 py-4 border-2 border-border text-foreground rounded-2xl font-semibold hover:bg-secondary hover:border-primary/20 transition-all duration-300">
                   Đăng ký thành viên
                 </Link>
@@ -135,10 +156,15 @@ export default function HomePage() {
                 <p className="text-white/70 max-w-lg">Đăng ký ngay để nhận ưu đãi 10% cho lần đặt sân đầu tiên. Chỉ mất 30 giây!</p>
               </div>
               <div className="flex flex-col sm:flex-row gap-4">
-                <Link href="/booking" className="group inline-flex items-center justify-center gap-2 px-8 py-4 bg-white text-sidebar rounded-2xl font-semibold hover:bg-white/90 transition-colors">
+                {/* Đã thay đổi thẻ Link thành Button gọi hàm kiểm tra */}
+                <button 
+                  onClick={handleBookingClick} 
+                  className="group inline-flex items-center justify-center gap-2 px-8 py-4 bg-white text-sidebar rounded-2xl font-semibold hover:bg-white/90 transition-colors"
+                >
                   <Zap className="w-5 h-5" /><span>Đặt sân ngay</span>
                   <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                </Link>
+                </button>
+                
                 <Link href="/register" className="inline-flex items-center justify-center gap-2 px-8 py-4 border-2 border-white/30 text-white rounded-2xl font-semibold hover:bg-white/10 transition-colors">
                   Tạo tài khoản
                 </Link>
