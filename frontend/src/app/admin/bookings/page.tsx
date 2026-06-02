@@ -43,17 +43,32 @@ export default function BookingsAdmin() {
   async function load() {
     setLoading(true);
     try {
-      setUser(getUser()); // Lấy thông tin user khi load trang
-      await apiPost("/api/bookings/run-auto-tasks", {});
+      // 1. Lấy thông tin user hiện tại
+      const currentUser = getUser();
+      setUser(currentUser);
+
+      // 2. Chạy auto-task nhưng CHỈ dành cho Admin/Quản lý và bắt lỗi riêng
+      if (currentUser && ["ADMIN", "QUAN_LY"].includes(currentUser.vai_tro)) {
+        try {
+          await apiPost("/api/bookings/run-auto-tasks", {});
+        } catch (taskErr) {
+          console.warn("Auto task failed (bỏ qua):", taskErr);
+        }
+      }
+
+      // 3. Tải danh sách booking và dịch vụ (Ai cũng tải được)
       const [bData, sData] = await Promise.all([
         apiGet("/api/bookings"),
         apiGet("/api/services") 
       ]);
       setList(Array.isArray(bData) ? bData : []);
       setAllServices(Array.isArray(sData) ? sData : (sData?.data || []));
+      
     } catch (e) {
       console.error("Load bookings failed", e);
-    } finally { setLoading(false); }
+    } finally { 
+      setLoading(false); 
+    }
   }
 
   useEffect(() => { load(); }, []);
