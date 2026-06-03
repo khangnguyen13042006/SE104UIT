@@ -241,21 +241,7 @@ Trang `/admin/bookings` có search bar:
 - Lọc theo trạng thái + khoảng ngày
 - Khách hàng chỉ thấy booking của riêng mình
 
-## 📧 Cấu hình Email Reminder (tuỳ chọn)
 
-Mặc định: reminder được **log ra console** terminal backend (đủ dùng demo).
-
-Để gửi **email thật** qua Gmail:
-1. Bật 2FA: https://myaccount.google.com/security
-2. Tạo App Password: https://myaccount.google.com/apppasswords
-3. Copy `backend/.env.example` → `backend/.env` rồi điền:
-```env
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your@gmail.com
-SMTP_PASSWORD=your-16-char-app-password
-SMTP_FROM=Sân Bóng UIT <your@gmail.com>
-```
 4. Restart backend → reminder sẽ gửi qua Gmail thật.
 
 Reminder logic:
