@@ -298,5 +298,16 @@ Sau đó mở http://localhost:8000/api/health — phải thấy `{"status":"ok"
 - Nguyễn Đỗ Hoàng Khang — 24520754
 
 ---
+## 👥 Bảng phân công công việc của nhóm 4
 
+| Họ và tên | MSSV | Vai trò | Mức độ hoàn thành công việc |
+|---|---|---|---|
+| Võ Huy Khang | 24520772 | Trưởng nhóm - Nội dung báo cáo + thuyết trình + code | 100% |
+| Ngô Hoàng Khang | 24520748 | Thành viên - Nội dung báo cáo + slide + code | 100% |
+| Võ Thanh Nguyên Khang | 24520773 | Thành viên - Nội dung báo cáo + slide + code | 100% |
+| Nguyễn Đỗ Hoàng Khang | 24520754 | Thành viên - Nội dung báo cáo + thuyết trình + code | 100% |
+
+---
+
+*© 2025 — Đồ án SE104 • UIT*
 *© 2025 — Đồ án SE104 • UIT*
