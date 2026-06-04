@@ -641,44 +641,7 @@ def claim_paid(booking_id: int, db: Session = Depends(get_db)):
     return {"ok": True, "message": "Đã ghi nhận, vui lòng đợi nhân viên xác nhận"}
 
 
-@router.post("/{booking_id}/send-reminder-now")
-def send_reminder_now(
-    booking_id: int,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.ADMIN, UserRole.QUAN_LY, UserRole.NHAN_VIEN)),
-):
-    """Admin/NV gửi reminder ngay (không đợi 30 phút trước). Hữu ích để test."""
-    from app.utils.email_service import send_email, build_reminder_email
 
-    b = db.query(Booking).filter(Booking.id == booking_id).first()
-    if not b:
-        raise HTTPException(404, "Không tìm thấy booking")
-
-    if b.khach_hang_id:
-        user = db.query(User).filter(User.id == b.khach_hang_id).first()
-        recipient_email = user.email if user else None
-        recipient_name = user.ho_ten if user else "Khách"
-    else:
-        recipient_email = b.email_khach_vang_lai
-        recipient_name = b.ten_khach_vang_lai
-
-    if not recipient_email:
-        raise HTTPException(400, "Booking này không có email người nhận")
-
-    field = db.query(Field).filter(Field.id == b.san_id).first()
-    subject, html, text = build_reminder_email(
-        ten_khach=recipient_name or "Khách",
-        ma_dat_san=b.ma_dat_san,
-        ten_san=field.ten_san if field else "—",
-        ngay_dat=b.ngay_dat.strftime("%d/%m/%Y"),
-        gio_bat_dau=b.gio_bat_dau.strftime("%H:%M"),
-        gio_ket_thuc=b.gio_ket_thuc.strftime("%H:%M"),
-        tien_san=float(b.tien_san),
-    )
-    ok = send_email(recipient_email, subject, html, text)
-    b.reminder_sent = True
-    db.commit()
-    return {"ok": ok, "to": recipient_email}
 
 
 @router.post("/run-auto-tasks")
