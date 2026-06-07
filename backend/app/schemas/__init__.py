@@ -139,16 +139,7 @@ class BookingServiceOut(BaseModel):
         from_attributes = True
 
 
-class InvoiceSummary(BaseModel):
-    id: int
-    tien_san: Decimal
-    tien_dich_vu: Decimal
-    giam_gia: Decimal
-    tong_cong: Decimal
-    trang_thai: PaymentStatus
 
-    class Config:
-        from_attributes = True
 
 
 class InvoiceSummary(BaseModel):
