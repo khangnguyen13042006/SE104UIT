@@ -310,4 +310,4 @@ Sau đó mở http://localhost:8000/api/health — phải thấy `{"status":"ok"
 ---
 
 *© 2025 — Đồ án SE104 • UIT*
-*© 2025 — Đồ án SE104 • UIT*
+*© 2026 — Đồ án SE104 • UIT*
