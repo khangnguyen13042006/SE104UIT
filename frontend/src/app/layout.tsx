@@ -1,3 +1,4 @@
+import ChatWidget from "@/components/ChatWidget";
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
@@ -24,6 +25,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
 };
+
 
 export default function RootLayout({
   children,
@@ -54,7 +56,10 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
         />
       </head>
-      <body className="antialiased min-h-screen">{children}</body>
+      <body className="antialiased min-h-screen">
+        {children}
+        <ChatWidget />
+      </body>
     </html>
   );
 }
