@@ -1,7 +1,6 @@
 "use client";
-
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import { apiGet, apiPost, formatVND, getUser } from "@/lib/api";
@@ -50,6 +49,7 @@ type Service = {
 
 export default function BookingPage() {
   const router = useRouter();
+  
   const [fields, setFields] = useState<Field[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [activeField, setActiveField] = useState<Field | null>(null);
@@ -72,7 +72,7 @@ export default function BookingPage() {
   const [err, setErr] = useState("");
   const [loadErr, setLoadErr] = useState("");
   const [memberStatus, setMemberStatus] = useState<{ tier: string; tier_name: string; discount_percent: number } | null>(null);
-
+  
   const dateStr = useMemo(() => {
     const y = selectedDate.getFullYear();
     const m = String(selectedDate.getMonth() + 1).padStart(2, "0");
