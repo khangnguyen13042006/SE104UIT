@@ -366,18 +366,29 @@ function BookingCard({ b, feedback, onCancel, onFeedback, onViewBill, onReschedu
 
 function CancelModal({ booking, onClose, onSuccess }: any) {
   const [reason, setReason] = useState("");
+  const [stk, setStk] = useState("");
+  const [tenTk, setTenTk] = useState("");
+  const [nganHang, setNganHang] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const hoursUntil = (new Date(`${booking.ngay_dat}T${booking.gio_bat_dau}`).getTime() - Date.now()) / 3600000;
+  const willRefund = hoursUntil >= 24;
 
   async function submit() {
     if (reason.length < 3) {
       setErr("Vui lòng nhập lý do (≥3 ký tự)");
       return;
     }
+    if (willRefund && (!stk.trim() || !tenTk.trim() || !nganHang.trim())) {
+      setErr("Đơn này được hoàn tiền — vui lòng nhập đủ Số tài khoản, Tên chủ tài khoản và Ngân hàng.");
+      return;
+    }
     setLoading(true);
     try {
-      await apiPost(`/api/bookings/${booking.id}/cancel`, { ly_do_huy: reason });
+      await apiPost(`/api/bookings/${booking.id}/cancel`, {
+        ly_do_huy: reason,
+        ...(willRefund ? { stk_hoan_tien: stk, ten_tk_hoan_tien: tenTk, ngan_hang_hoan_tien: nganHang } : {}),
+      });
       alert("Đã hủy booking");
       onSuccess();
     } catch (e: any) {
@@ -392,7 +403,7 @@ function CancelModal({ booking, onClose, onSuccess }: any) {
       <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-800 mb-4 flex gap-2">
         <AlertCircle size={16} className="shrink-0 mt-0.5" />
         <div>
-          {hoursUntil >= 24
+          {willRefund
             ? `Còn ${hoursUntil.toFixed(1)}h trước giờ chơi — được hoàn 50% tiền sân.`
             : `Còn ${hoursUntil.toFixed(1)}h trước giờ chơi — KHÔNG được hoàn tiền.`}
         </div>
@@ -401,6 +412,21 @@ function CancelModal({ booking, onClose, onSuccess }: any) {
       <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
         className="w-full px-3 py-2.5 rounded-xl border border-input focus:border-primary outline-none resize-none bg-background"
         placeholder="Ví dụ: Đổi lịch họp đột xuất..." />
+
+      {willRefund && (
+        <div className="mt-4 space-y-3">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            Thông tin nhận hoàn tiền
+          </p>
+          <input value={stk} onChange={(e) => setStk(e.target.value)} placeholder="Số tài khoản"
+            className="w-full px-3 py-2.5 rounded-xl border border-input focus:border-primary outline-none bg-background" />
+          <input value={tenTk} onChange={(e) => setTenTk(e.target.value)} placeholder="Tên chủ tài khoản"
+            className="w-full px-3 py-2.5 rounded-xl border border-input focus:border-primary outline-none bg-background" />
+          <input value={nganHang} onChange={(e) => setNganHang(e.target.value)} placeholder="Ngân hàng"
+            className="w-full px-3 py-2.5 rounded-xl border border-input focus:border-primary outline-none bg-background" />
+        </div>
+      )}
+
       {err && <div className="mt-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm">{err}</div>}
       <div className="flex gap-2 mt-5">
         <button type="button" onClick={onClose} disabled={loading}

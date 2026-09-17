@@ -12,9 +12,12 @@ Database configuration. Hỗ trợ 3 loại database:
     DATABASE_URL=mssql+pyodbc://user:password@server.database.windows.net:1433/san_bong?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no
 """
 import os
-from sqlalchemy import create_engine
+import logging
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
+
+logger = logging.getLogger("uvicorn.error")
 
 load_dotenv()
 
@@ -63,6 +66,47 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# Dự án không dùng Alembic. Base.metadata.create_all() chỉ tạo BẢNG MỚI, không tự thêm CỘT MỚI
+# vào bảng đã tồn tại — nên mỗi khi model có thêm cột, phải khai báo ở đây để tự "vá" schema cũ.
+TABLE_MIGRATIONS: dict[str, dict[str, str]] = {
+    "bookings": {
+        "ngay_huy": "datetime",
+        "stk_hoan_tien": "varchar(30)",
+        "ten_tk_hoan_tien": "varchar(100)",
+        "ngan_hang_hoan_tien": "varchar(100)",
+        "da_doi_lich": "boolean",
+        "ngay_doi_lich_gan_nhat": "datetime",
+    },
+}
+
+
+def _column_ddl_type(dialect: str, py_type: str) -> str:
+    if py_type == "boolean":
+        return "BIT NOT NULL DEFAULT 0" if dialect == "mssql" else "BOOLEAN NOT NULL DEFAULT 0"
+    if py_type == "datetime":
+        return "DATETIME2" if dialect == "mssql" else "DATETIME"
+    return py_type.upper()
+
+
+def migrate_schema() -> None:
+    """Tự thêm các cột còn thiếu vào bảng đã tồn tại, dựa trên TABLE_MIGRATIONS ở trên."""
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    add_kw = "ADD" if is_mssql else "ADD COLUMN"
+
+    for table_name, columns in TABLE_MIGRATIONS.items():
+        if table_name not in existing_tables:
+            continue
+        existing_cols = {c["name"] for c in inspector.get_columns(table_name)}
+        with engine.begin() as conn:
+            for col, py_type in columns.items():
+                if col in existing_cols:
+                    continue
+                ddl_type = _column_ddl_type(engine.dialect.name, py_type)
+                conn.execute(text(f"ALTER TABLE {table_name} {add_kw} {col} {ddl_type}"))
+                logger.info(f"[MIGRATE] Đã thêm cột {table_name}.{col}")
 
 
 def get_db_info() -> dict:

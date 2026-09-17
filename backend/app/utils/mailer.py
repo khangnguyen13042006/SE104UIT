@@ -111,3 +111,32 @@ def send_booking_cancelled_email(
     </div>
     """
     _send(to_email, f"Đơn đặt sân {ma_dat_san} đã bị hủy", html)
+
+
+def send_booking_rescheduled_email(
+    to_email: Optional[str],
+    ma_dat_san: str,
+    ten_san: str,
+    ngay_dat_cu: date,
+    gio_bat_dau_cu: time,
+    gio_ket_thuc_cu: time,
+    ngay_dat_moi: date,
+    gio_bat_dau_moi: time,
+    gio_ket_thuc_moi: time,
+    tong_cong: Union[Decimal, float, int],
+) -> None:
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color:#1a1a1a;">
+      <h2 style="color:#0ea5e9;">Đơn đặt sân đã được đổi lịch</h2>
+      <p>Đơn đặt sân sau đây tại <strong>Sân Bóng UIT</strong> vừa được đổi sang khung giờ mới:</p>
+      <table style="width:100%; border-collapse: collapse; margin: 16px 0;">
+        <tr><td style="padding:6px 0; color:#888;">Mã đặt sân</td><td style="padding:6px 0; text-align:right; font-weight:bold;">{ma_dat_san}</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Sân</td><td style="padding:6px 0; text-align:right;">{ten_san}</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Lịch cũ</td><td style="padding:6px 0; text-align:right; text-decoration:line-through; color:#999;">{ngay_dat_cu.strftime('%d/%m/%Y')} {gio_bat_dau_cu.strftime('%H:%M')}-{gio_ket_thuc_cu.strftime('%H:%M')}</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Lịch mới</td><td style="padding:6px 0; text-align:right; font-weight:bold; color:#0ea5e9;">{ngay_dat_moi.strftime('%d/%m/%Y')} {gio_bat_dau_moi.strftime('%H:%M')}-{gio_ket_thuc_moi.strftime('%H:%M')}</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Tổng tiền (đã cập nhật)</td><td style="padding:6px 0; text-align:right; font-weight:bold;">{int(tong_cong):,}đ</td></tr>
+      </table>
+      <p style="color:#888; font-size: 12px;">Nếu bạn không yêu cầu đổi lịch này, vui lòng liên hệ Sân Bóng UIT ngay.</p>
+    </div>
+    """
+    _send(to_email, f"Đơn đặt sân {ma_dat_san} đã đổi lịch", html)

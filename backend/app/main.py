@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi.staticfiles import StaticFiles
-from app.core.database import Base, engine
+from app.core.database import Base, engine, migrate_schema
 from app.routers import (
     auth, users, fields, bookings, services,
     invoices, memberships, shifts, feedbacks, reports,
@@ -22,6 +22,7 @@ logger = logging.getLogger("uvicorn.error")
 def init_database():
     try:
         Base.metadata.create_all(bind=engine)
+        migrate_schema()
         logger.info("✅ Database tables initialized")
     except Exception as e:
         logger.error(f"⚠️  Database init failed: {e}")

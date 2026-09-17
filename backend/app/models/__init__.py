@@ -74,6 +74,12 @@ class Booking(Base):
     trang_thai = Column(SQLEnum(BookingStatus), nullable=False, default=BookingStatus.CHO_XAC_NHAN)
     ly_do_huy = Column(Text)
     hoan_tien = Column(Boolean, nullable=False, default=False)  # Admin/Staff quyết định có hoàn tiền không
+    ngay_huy = Column(DateTime, nullable=True)  # thời điểm booking bị hủy
+    stk_hoan_tien = Column(String(30), nullable=True)  # STK khách cung cấp để nhận hoàn tiền
+    ten_tk_hoan_tien = Column(String(100), nullable=True)  # Tên chủ tài khoản nhận hoàn tiền
+    ngan_hang_hoan_tien = Column(String(100), nullable=True)  # Ngân hàng nhận hoàn tiền
+    da_doi_lich = Column(Boolean, nullable=False, default=False)  # đã từng đổi lịch chưa
+    ngay_doi_lich_gan_nhat = Column(DateTime, nullable=True)  # thời điểm đổi lịch gần nhất
     nguoi_tao_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # ai tạo booking (NV hay khách)
     ngay_tao = Column(DateTime, default=datetime.utcnow)
 

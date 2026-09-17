@@ -30,10 +30,14 @@ export default function BookingsAdmin() {
   const [cancelTarget, setCancelTarget] = useState<any>(null);
   const [serviceTarget, setServiceTarget] = useState<any>(null);
   const [rescheduleTarget, setRescheduleTarget] = useState<any>(null);
+  const [bankInfoTarget, setBankInfoTarget] = useState<any>(null);
 
   // States form Hủy
   const [lyDoHuy, setLyDoHuy] = useState("");
   const [isRefund, setIsRefund] = useState(false);
+  const [stkHoanTien, setStkHoanTien] = useState("");
+  const [tenTkHoanTien, setTenTkHoanTien] = useState("");
+  const [nganHangHoanTien, setNganHangHoanTien] = useState("");
 
   // States form Dịch vụ
   const [selSvcId, setSelSvcId] = useState("");
@@ -84,6 +88,12 @@ export default function BookingsAdmin() {
     return matchSearch && matchStatus;
   });
 
+  // Với Nhân viên (không được chọn hoàn tiền thủ công), tự tính theo policy 24h để biết có cần hỏi STK không
+  const cancelHoursUntil = cancelTarget
+    ? (new Date(`${cancelTarget.ngay_dat}T${cancelTarget.gio_bat_dau}`).getTime() - Date.now()) / 3600000
+    : 0;
+  const cancelWillRefund = isManager ? isRefund : cancelHoursUntil >= 24;
+
   async function confirmBooking(id: number) {
     if (!confirm("Xác nhận đã nhận tiền cọc và duyệt đơn này?")) return;
     try {
@@ -106,11 +116,19 @@ export default function BookingsAdmin() {
       // Nếu là Quản lý/Admin -> Gửi kèm cờ hoan_tien để ghi đè. Nếu là NV -> Giao cho backend tự tính 24h
       const payload: any = { ly_do_huy: lyDoHuy };
       if (isManager) payload.hoan_tien = isRefund;
+      if (cancelWillRefund && (stkHoanTien || tenTkHoanTien || nganHangHoanTien)) {
+        payload.stk_hoan_tien = stkHoanTien;
+        payload.ten_tk_hoan_tien = tenTkHoanTien;
+        payload.ngan_hang_hoan_tien = nganHangHoanTien;
+      }
 
       await apiPost(`/api/bookings/${cancelTarget.id}/cancel`, payload);
-      setCancelTarget(null); 
-      setLyDoHuy(""); 
+      setCancelTarget(null);
+      setLyDoHuy("");
       setIsRefund(false);
+      setStkHoanTien("");
+      setTenTkHoanTien("");
+      setNganHangHoanTien("");
       load();
     } catch (e: any) { alert(e.message); }
   }
@@ -204,6 +222,14 @@ export default function BookingsAdmin() {
                     <td className="p-5">
                       <div className="font-black text-primary font-mono">{b.ma_dat_san}</div>
                       <div className="text-xs font-bold text-foreground/80">{b.ten_khach || "Khách lẻ"}</div>
+                      {b.trang_thai === "HUY" && b.hoan_tien === true && (
+                        <button
+                          onClick={() => setBankInfoTarget(b)}
+                          className="mt-1 text-[10px] font-bold text-orange-600 hover:underline flex items-center gap-1"
+                        >
+                          <Receipt size={11} /> Xem STK hoàn tiền
+                        </button>
+                      )}
                     </td>
                     <td className="p-5">
                         <div className="text-sm font-bold text-foreground">{b.ten_san}</div>
@@ -489,25 +515,42 @@ export default function BookingsAdmin() {
                     <span className="text-sm font-bold text-foreground">Có hoàn tiền (50%)</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input 
-                      type="radio" 
-                      checked={isRefund === false} 
-                      onChange={() => setIsRefund(false)} 
-                      className="w-4 h-4 accent-red-600" 
+                    <input
+                      type="radio"
+                      checked={isRefund === false}
+                      onChange={() => setIsRefund(false)}
+                      className="w-4 h-4 accent-red-600"
                     />
                     <span className="text-sm font-bold text-foreground">Không hoàn tiền</span>
                   </label>
                 </div>
-              ) : (
+              ) : null}
+
+              {!isManager && (
                 <div className="mb-6 px-2">
                   <p className="text-sm text-orange-600 font-bold bg-orange-50 p-3 rounded-xl">
-                    Hệ thống sẽ tự động tính toán hoàn tiền theo quy định (Hủy trước 24h).
+                    Còn {cancelHoursUntil.toFixed(1)}h trước giờ chơi — hệ thống sẽ tự động{" "}
+                    {cancelWillRefund ? "hoàn 50% tiền sân" : "KHÔNG hoàn tiền"} theo quy định (Hủy trước 24h).
                   </p>
                 </div>
               )}
 
+              {cancelWillRefund && (
+                <div className="mb-6 space-y-2">
+                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                    Thông tin nhận hoàn tiền {isManager ? "(nếu đã có, ví dụ khách báo qua điện thoại)" : "(hỏi khách trước khi hủy)"}
+                  </p>
+                  <input value={stkHoanTien} onChange={e => setStkHoanTien(e.target.value)} placeholder="Số tài khoản"
+                    className="w-full px-3 py-2.5 rounded-xl border border-input bg-background outline-none focus:border-red-500 transition-all" />
+                  <input value={tenTkHoanTien} onChange={e => setTenTkHoanTien(e.target.value)} placeholder="Tên chủ tài khoản"
+                    className="w-full px-3 py-2.5 rounded-xl border border-input bg-background outline-none focus:border-red-500 transition-all" />
+                  <input value={nganHangHoanTien} onChange={e => setNganHangHoanTien(e.target.value)} placeholder="Ngân hàng"
+                    className="w-full px-3 py-2.5 rounded-xl border border-input bg-background outline-none focus:border-red-500 transition-all" />
+                </div>
+              )}
+
               <div className="flex gap-3">
-                <button onClick={() => { setCancelTarget(null); setLyDoHuy(""); setIsRefund(false); }} className="flex-1 py-4 font-bold hover:bg-secondary rounded-2xl transition-all">Quay lại</button>
+                <button onClick={() => { setCancelTarget(null); setLyDoHuy(""); setIsRefund(false); setStkHoanTien(""); setTenTkHoanTien(""); setNganHangHoanTien(""); }} className="flex-1 py-4 font-bold hover:bg-secondary rounded-2xl transition-all">Quay lại</button>
                 <button onClick={handleCancel} className="flex-1 py-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-red-600/20 active:scale-95 transition-all">Xác nhận hủy</button>
               </div>
             </motion.div>
@@ -525,6 +568,39 @@ export default function BookingsAdmin() {
           }}
         />
       )}
+
+      {/* ==== MODAL: XEM STK HOÀN TIỀN ==== */}
+      <AnimatePresence>
+        {bankInfoTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-card w-full max-w-sm rounded-3xl border border-border p-6 shadow-2xl">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-black uppercase text-orange-600">STK nhận hoàn tiền</h3>
+                <button onClick={() => setBankInfoTarget(null)} className="p-1.5 hover:bg-secondary rounded-lg"><X size={18}/></button>
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">Đơn {bankInfoTarget.ma_dat_san} — {bankInfoTarget.ten_khach || "Khách lẻ"}</p>
+              {bankInfoTarget.stk_hoan_tien || bankInfoTarget.ten_tk_hoan_tien || bankInfoTarget.ngan_hang_hoan_tien ? (
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between border-b border-border pb-2">
+                    <span className="text-muted-foreground">Số tài khoản</span>
+                    <span className="font-bold">{bankInfoTarget.stk_hoan_tien || "—"}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-border pb-2">
+                    <span className="text-muted-foreground">Tên chủ TK</span>
+                    <span className="font-bold">{bankInfoTarget.ten_tk_hoan_tien || "—"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Ngân hàng</span>
+                    <span className="font-bold">{bankInfoTarget.ngan_hang_hoan_tien || "—"}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">Khách chưa cung cấp thông tin nhận hoàn tiền (có thể đã báo qua điện thoại).</p>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

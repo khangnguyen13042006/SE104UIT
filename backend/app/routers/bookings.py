@@ -24,7 +24,7 @@ from app.utils.helpers import (
     has_booking_conflict, get_active_membership, get_discount_rate,
     is_valid_booking_time, calculate_lifetime_spend, calculate_tier_from_spend,
 )
-from app.utils.mailer import send_booking_success_email, send_booking_cancelled_email
+from app.utils.mailer import send_booking_success_email, send_booking_cancelled_email, send_booking_rescheduled_email
 
 router = APIRouter(prefix="/api/bookings", tags=["Bookings"])
 
@@ -80,6 +80,12 @@ def _booking_to_out(b: Booking) -> dict:
         "trang_thai": b.trang_thai,
         "ly_do_huy": b.ly_do_huy,
         "hoan_tien": b.hoan_tien,
+        "ngay_huy": b.ngay_huy,
+        "stk_hoan_tien": b.stk_hoan_tien,
+        "ten_tk_hoan_tien": b.ten_tk_hoan_tien,
+        "ngan_hang_hoan_tien": b.ngan_hang_hoan_tien,
+        "da_doi_lich": b.da_doi_lich,
+        "ngay_doi_lich_gan_nhat": b.ngay_doi_lich_gan_nhat,
         "ngay_tao": b.ngay_tao,
         "services": services_out,
         "invoice": invoice_data,
@@ -256,10 +262,13 @@ def list_bookings(
     den_ngay: Optional[date] = None,
     keyword: Optional[str] = None,  # Admin/staff: search mã, tên KH, SĐT
     khach_hang_id: Optional[int] = None,  # Admin/staff: filter by customer
+    da_doi_lich: Optional[bool] = None,  # Admin/staff: lọc booking đã từng đổi lịch
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     q = db.query(Booking)
+    if da_doi_lich is not None:
+        q = q.filter(Booking.da_doi_lich == da_doi_lich)
     # Khách hàng chỉ xem booking của mình
     if user.vai_tro == UserRole.KHACH_HANG:
         q = q.filter(Booking.khach_hang_id == user.id)
@@ -291,7 +300,14 @@ def list_bookings(
                 Booking.khach_hang_id.in_(user_matches),
             ))
 
-    bookings = q.order_by(Booking.ngay_dat.desc(), Booking.gio_bat_dau.desc()).all()
+    # Với booking đã hủy hoặc đã đổi lịch: ưu tiên sắp theo thời điểm hủy/đổi lịch gần nhất
+    # (hữu ích cho thông báo "vừa xảy ra" ở admin), thay vì theo ngày đá như mặc định.
+    if trang_thai == BookingStatus.HUY:
+        bookings = q.order_by(Booking.ngay_huy.desc(), Booking.ngay_dat.desc()).all()
+    elif da_doi_lich is True:
+        bookings = q.order_by(Booking.ngay_doi_lich_gan_nhat.desc(), Booking.ngay_dat.desc()).all()
+    else:
+        bookings = q.order_by(Booking.ngay_dat.desc(), Booking.gio_bat_dau.desc()).all()
     return [_booking_to_out(b) for b in bookings]
 
 
@@ -378,9 +394,23 @@ def cancel_booking(
         refund_rate = 0.5 if hoan_tien else 0.0
         refund_note = "[Tự động theo policy 24h]"
 
+    # Nếu khách hàng tự hủy và thuộc diện hoàn tiền, bắt buộc cung cấp thông tin nhận hoàn tiền.
+    # Không hoàn tiền thì bỏ qua yêu cầu này.
+    if hoan_tien and user.vai_tro == UserRole.KHACH_HANG:
+        if not (payload.stk_hoan_tien and payload.ten_tk_hoan_tien and payload.ngan_hang_hoan_tien):
+            raise HTTPException(
+                400,
+                "Đơn này thuộc diện hoàn tiền — vui lòng cung cấp Số tài khoản, Tên chủ tài khoản và Ngân hàng để nhận hoàn tiền.",
+            )
+
     b.trang_thai = BookingStatus.HUY
     b.ly_do_huy = payload.ly_do_huy
     b.hoan_tien = hoan_tien
+    b.ngay_huy = datetime.utcnow()
+    if hoan_tien:
+        b.stk_hoan_tien = payload.stk_hoan_tien
+        b.ten_tk_hoan_tien = payload.ten_tk_hoan_tien
+        b.ngan_hang_hoan_tien = payload.ngan_hang_hoan_tien
 
     # Hoàn dịch vụ vào kho (đặc biệt cho thuê giày...)
     for bs in b.booking_services:
@@ -465,12 +495,15 @@ def reschedule_booking(
         if best_rate > 0:
             giam_gia_moi = (tien_san_moi * Decimal(str(best_rate))).quantize(Decimal("1"))
 
-    old_info = f"{b.ngay_dat} {b.gio_bat_dau.strftime('%H:%M')}-{b.gio_ket_thuc.strftime('%H:%M')}"
+    old_ngay_dat, old_gio_bat_dau, old_gio_ket_thuc = b.ngay_dat, b.gio_bat_dau, b.gio_ket_thuc
+    old_info = f"{old_ngay_dat} {old_gio_bat_dau.strftime('%H:%M')}-{old_gio_ket_thuc.strftime('%H:%M')}"
     b.ngay_dat = payload.ngay_dat
     b.gio_bat_dau = payload.gio_bat_dau
     b.gio_ket_thuc = payload.gio_ket_thuc
     b.so_gio = so_gio_moi
     b.tien_san = tien_san_moi
+    b.da_doi_lich = True
+    b.ngay_doi_lich_gan_nhat = datetime.utcnow()
 
     note = (
         f"[ĐỔI LỊCH {datetime.now().strftime('%H:%M %d/%m')}] Từ {old_info} sang "
@@ -485,6 +518,20 @@ def reschedule_booking(
 
     db.commit()
     db.refresh(b)
+
+    recipient = b.khach_hang.email if b.khach_hang else b.email_khach_vang_lai
+    send_booking_rescheduled_email(
+        to_email=recipient,
+        ma_dat_san=b.ma_dat_san,
+        ten_san=field.ten_san if field else "",
+        ngay_dat_cu=old_ngay_dat,
+        gio_bat_dau_cu=old_gio_bat_dau,
+        gio_ket_thuc_cu=old_gio_ket_thuc,
+        ngay_dat_moi=b.ngay_dat,
+        gio_bat_dau_moi=b.gio_bat_dau,
+        gio_ket_thuc_moi=b.gio_ket_thuc,
+        tong_cong=b.invoice.tong_cong if b.invoice else b.tien_san,
+    )
     return _booking_to_out(b)
 
 

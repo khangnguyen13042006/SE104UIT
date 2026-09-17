@@ -41,17 +41,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     setU(u);
   }, [router]);
 
-  // Load notifications: bookings CHO_XAC_NHAN + feedbacks dưới 3 sao
+  // Load notifications: booking chờ xác nhận, đánh giá thấp, dịch vụ sắp hết hàng, booking đã hủy, booking đổi lịch
   async function loadNotifs() {
     if (!user) return;
     try {
       const tasks: any[] = [
         apiGet("/api/bookings?trang_thai=CHO_XAC_NHAN").catch(() => []),
+        apiGet("/api/services").catch(() => []),
+        apiGet("/api/bookings?trang_thai=HUY").catch(() => []),
+        apiGet("/api/bookings?da_doi_lich=true").catch(() => []),
       ];
       if (["ADMIN", "QUAN_LY"].includes(user.vai_tro)) {
         tasks.push(apiGet("/api/feedbacks?max_star=2").catch(() => []));
       }
-      const [pendingBookings, badFeedbacks] = await Promise.all(tasks);
+      const [pendingBookings, allServices, cancelledBookings, rescheduledBookings, badFeedbacks] =
+        await Promise.all(tasks);
 
       const items: any[] = [];
       (pendingBookings || []).slice(0, 10).forEach((b: any) => {
@@ -76,6 +80,45 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           time: f.ngay_tao,
           href: "/admin/feedbacks",
           urgent: true,
+        });
+      });
+      (allServices || [])
+        .filter((s: any) => s.trang_thai === "HOAT_DONG" && s.ton_kho < 5)
+        .slice(0, 5)
+        .forEach((s: any) => {
+          items.push({
+            id: `s-${s.id}`,
+            type: "service",
+            icon: "📦",
+            title: "Dịch vụ sắp hết hàng",
+            desc: `${s.ten_dich_vu}: còn ${s.ton_kho} ${s.don_vi_tinh}`,
+            time: new Date().toISOString(),
+            href: "/admin/services",
+            urgent: true,
+          });
+        });
+      (cancelledBookings || []).slice(0, 5).forEach((b: any) => {
+        items.push({
+          id: `c-${b.id}`,
+          type: "cancel",
+          icon: "❌",
+          title: "Booking đã hủy",
+          desc: `${b.ten_san} • ${b.ten_khach || "khách"} • ${b.hoan_tien ? "Có hoàn tiền" : "Không hoàn tiền"}`,
+          time: b.ngay_huy || b.ngay_tao,
+          href: "/admin/bookings",
+          urgent: b.hoan_tien === true,
+        });
+      });
+      (rescheduledBookings || []).slice(0, 5).forEach((b: any) => {
+        items.push({
+          id: `r-${b.id}`,
+          type: "reschedule",
+          icon: "🔄",
+          title: "Đổi lịch đặt sân",
+          desc: `${b.ma_dat_san} • ${b.ten_san} → ${b.ngay_dat} ${b.gio_bat_dau?.slice(0, 5)}-${b.gio_ket_thuc?.slice(0, 5)}`,
+          time: b.ngay_doi_lich_gan_nhat || b.ngay_tao,
+          href: "/admin/bookings",
+          urgent: false,
         });
       });
 
