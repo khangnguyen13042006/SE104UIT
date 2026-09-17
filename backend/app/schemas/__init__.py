@@ -131,6 +131,12 @@ class BookingCancel(BaseModel):
     hoan_tien: Optional[bool] = None  # CHỈ admin/staff được set. Khách hàng để None → server tự tính theo policy 24h.
 
 
+class BookingReschedule(BaseModel):
+    ngay_dat: date
+    gio_bat_dau: time
+    gio_ket_thuc: time
+
+
 class AvailabilityQuery(BaseModel):
     ngay: date
     loai_san: Optional[FieldType] = None

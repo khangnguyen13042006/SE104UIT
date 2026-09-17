@@ -18,6 +18,7 @@ import {
   ClipboardCheck,
   MapPin,
   Settings2,
+  Ban,
 } from "lucide-react";
 import { apiPost, apiPut, formatVND, getUser } from "@/lib/api";
 
@@ -54,6 +55,14 @@ interface ConfirmBookingActionPayload {
   ten_san: string;
 }
 
+interface CancelBookingActionPayload {
+  booking_id: number;
+  ma_dat_san: string;
+  ten_san: string;
+  ly_do_huy: string;
+  hoan_tien: boolean | null;
+}
+
 interface CreateFieldActionPayload {
   ten_san: string;
   loai_san: string;
@@ -78,6 +87,7 @@ type ChatAction =
   | { type: "add_service"; payload: AddServiceActionPayload; status?: ActionStatus; resultText?: string }
   | { type: "create_service"; payload: CreateServiceActionPayload; status?: ActionStatus; resultText?: string }
   | { type: "confirm_booking"; payload: ConfirmBookingActionPayload; status?: ActionStatus; resultText?: string }
+  | { type: "cancel_booking"; payload: CancelBookingActionPayload; status?: ActionStatus; resultText?: string }
   | { type: "create_field"; payload: CreateFieldActionPayload; status?: ActionStatus; resultText?: string }
   | { type: "update_field"; payload: UpdateFieldActionPayload; status?: ActionStatus; resultText?: string };
 
@@ -90,7 +100,7 @@ interface Message {
 const CUSTOMER_GREETING =
   "Xin chào! Em là lễ tân ảo Sân Bóng UIT. Anh/chị cần kiểm tra lịch trống, bảng giá hay cần tư vấn chọn sân nào cứ nhắn em nhé!";
 const ADMIN_GREETING =
-  "Xin chào! Em là trợ lý nội bộ. Anh/chị có thể hỏi booking đang chờ xác nhận, dịch vụ sắp hết hàng, đánh giá thấp gần đây, hoặc nhờ em xác nhận booking / thêm dịch vụ vào bill / tạo dịch vụ mới / thêm sân / sửa giá sân.";
+  "Xin chào! Em là trợ lý nội bộ. Anh/chị có thể hỏi booking đang chờ xác nhận, dịch vụ sắp hết hàng, đánh giá thấp gần đây, hoặc nhờ em xác nhận/hủy booking, thêm dịch vụ vào bill, tạo dịch vụ mới, thêm sân, sửa giá sân.";
 
 const CHAT_STORAGE_KEY = { customer: "kickoff_chat_customer_v1", admin: "kickoff_chat_admin_v1" } as const;
 
@@ -170,12 +180,12 @@ export default function ChatWidget() {
     setUser(getUser());
   }, [pathname]);
 
-  // Chuyển qua lại giữa chế độ khách hàng <-> nội bộ: nạp đúng lịch sử đã lưu của chế độ đó (2 ngữ cảnh tách biệt)
+  // Chuyển qua lại giữa chế độ khách hàng <-> nội bộ: nạp đúng lịch sử đã lưu của chế độ đó (2 ngữ cảnh tách biệt).
+  // Không đóng khung chat lại — giữ nguyên trạng thái đang mở/đóng khi điều hướng trang.
   useEffect(() => {
     if (prevModeRef.current !== isAdminMode) {
       prevModeRef.current = isAdminMode;
       setMessages(loadMessages(isAdminMode ? "admin" : "customer"));
-      setIsOpen(false);
     }
   }, [isAdminMode]);
 
@@ -215,6 +225,8 @@ export default function ChatWidget() {
         action = { type: "create_service", payload: data.create_service_action, status: "idle" };
       } else if (data.confirm_booking_action) {
         action = { type: "confirm_booking", payload: data.confirm_booking_action, status: "idle" };
+      } else if (data.cancel_booking_action) {
+        action = { type: "cancel_booking", payload: data.cancel_booking_action, status: "idle" };
       } else if (data.create_field_action) {
         action = { type: "create_field", payload: data.create_field_action, status: "idle" };
       } else if (data.update_field_action) {
@@ -252,7 +264,6 @@ export default function ChatWidget() {
   };
 
   const handleAutoFill = (action: BookingActionPayload) => {
-    setIsOpen(false);
     const query = new URLSearchParams({
       field_id: String(action.field_id),
       date: action.date,
@@ -307,6 +318,22 @@ export default function ChatWidget() {
       updateActionAt(idx, {
         status: "done",
         resultText: `Đã xác nhận đơn ${payload.ma_dat_san} (${payload.ten_san}).`,
+      });
+    } catch (e: any) {
+      updateActionAt(idx, { status: "error", resultText: e.message || "Có lỗi xảy ra, vui lòng thử lại." });
+    }
+  };
+
+  const handleCancelBooking = async (idx: number, payload: CancelBookingActionPayload) => {
+    updateActionAt(idx, { status: "loading" });
+    try {
+      await apiPost(`/api/bookings/${payload.booking_id}/cancel`, {
+        ly_do_huy: payload.ly_do_huy,
+        hoan_tien: payload.hoan_tien,
+      });
+      updateActionAt(idx, {
+        status: "done",
+        resultText: `Đã hủy đơn ${payload.ma_dat_san} (${payload.ten_san}).`,
       });
     } catch (e: any) {
       updateActionAt(idx, { status: "error", resultText: e.message || "Có lỗi xảy ra, vui lòng thử lại." });
@@ -449,6 +476,17 @@ export default function ChatWidget() {
                       status={m.action.status}
                       resultText={m.action.resultText}
                       onConfirm={() => handleConfirmBooking(idx, m.action!.payload as ConfirmBookingActionPayload)}
+                    />
+                  )}
+
+                  {m.action?.type === "cancel_booking" && (
+                    <ActionCard
+                      icon={<Ban className="w-3.5 h-3.5" />}
+                      description={`Hủy đơn ${m.action.payload.ma_dat_san} (${m.action.payload.ten_san})? Lý do: ${m.action.payload.ly_do_huy}`}
+                      buttonLabel="Hủy đơn"
+                      status={m.action.status}
+                      resultText={m.action.resultText}
+                      onConfirm={() => handleCancelBooking(idx, m.action!.payload as CancelBookingActionPayload)}
                     />
                   )}
 

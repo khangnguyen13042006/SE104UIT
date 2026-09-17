@@ -18,13 +18,13 @@ from app.core.config import (
     PaymentMethod, PaymentStatus
 )
 from app.models import Booking, Field, User, Service, BookingService, Invoice
-from app.schemas import BookingCreate, BookingCancel, BookingOut, BookingServiceOut
+from app.schemas import BookingCreate, BookingCancel, BookingReschedule, BookingOut, BookingServiceOut
 from app.utils.helpers import (
     generate_code, calculate_hours, calculate_field_price,
     has_booking_conflict, get_active_membership, get_discount_rate,
-    is_valid_booking_time
+    is_valid_booking_time, calculate_lifetime_spend, calculate_tier_from_spend,
 )
-from app.utils.mailer import send_booking_success_email
+from app.utils.mailer import send_booking_success_email, send_booking_cancelled_email
 
 router = APIRouter(prefix="/api/bookings", tags=["Bookings"])
 
@@ -396,6 +396,92 @@ def cancel_booking(
             b.ghi_chu = (b.ghi_chu or "") + f"\n[Chờ hoàn {refund_amount}đ ({int(refund_rate*100)}%)] {refund_note}"
         elif not hoan_tien:
             b.ghi_chu = (b.ghi_chu or "") + f"\n[Không hoàn tiền] {refund_note}"
+
+    db.commit()
+    db.refresh(b)
+
+    recipient = b.khach_hang.email if b.khach_hang else b.email_khach_vang_lai
+    send_booking_cancelled_email(
+        to_email=recipient,
+        ma_dat_san=b.ma_dat_san,
+        ten_san=b.san.ten_san if b.san else "",
+        ngay_dat=b.ngay_dat,
+        gio_bat_dau=b.gio_bat_dau,
+        gio_ket_thuc=b.gio_ket_thuc,
+        ly_do_huy=b.ly_do_huy,
+        hoan_tien=hoan_tien,
+    )
+    return _booking_to_out(b)
+
+
+@router.put("/{booking_id}/reschedule", response_model=BookingOut)
+def reschedule_booking(
+    booking_id: int,
+    payload: BookingReschedule,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Đổi ngày/giờ của một booking đang chờ hoặc đã xác nhận sang một khung giờ trống khác."""
+    b = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not b:
+        raise HTTPException(404, "Không tìm thấy booking")
+    if user.vai_tro == UserRole.KHACH_HANG and b.khach_hang_id != user.id:
+        raise HTTPException(403, "Bạn không có quyền đổi lịch booking này")
+    if b.trang_thai not in (BookingStatus.CHO_XAC_NHAN, BookingStatus.DA_XAC_NHAN):
+        raise HTTPException(400, "Chỉ có thể đổi lịch khi đơn đang chờ xác nhận hoặc đã xác nhận")
+
+    now_vn_dt = datetime.utcnow() + timedelta(hours=7)
+    today_vn = now_vn_dt.date()
+    if payload.ngay_dat < today_vn:
+        raise HTTPException(400, "Không thể đổi sang ngày trong quá khứ")
+    if payload.ngay_dat == today_vn and payload.gio_bat_dau <= now_vn_dt.time():
+        raise HTTPException(400, "Khung giờ này đã trôi qua so với thời gian thực.")
+
+    ok, msg = is_valid_booking_time(payload.gio_bat_dau, payload.gio_ket_thuc)
+    if not ok:
+        raise HTTPException(400, msg)
+
+    if has_booking_conflict(
+        db, b.san_id, payload.ngay_dat, payload.gio_bat_dau, payload.gio_ket_thuc, exclude_booking_id=b.id
+    ):
+        raise HTTPException(409, "Khung giờ mới đã có người đặt, vui lòng chọn khung khác")
+
+    field = b.san
+    so_gio_moi = calculate_hours(payload.gio_bat_dau, payload.gio_ket_thuc)
+    tien_san_moi = calculate_field_price(field, payload.gio_bat_dau, payload.gio_ket_thuc)
+
+    # Tính lại giảm giá (nếu có) trên tiền sân mới, theo đúng hạng hiện tại của khách
+    giam_gia_moi = Decimal(0)
+    if b.khach_hang_id:
+        spend = calculate_lifetime_spend(db, b.khach_hang_id)
+        tier_spend = calculate_tier_from_spend(spend)
+        rate_spend = get_discount_rate(tier_spend)
+        active_mem = get_active_membership(db, b.khach_hang_id)
+        rate_mem = 0.0
+        if active_mem:
+            tier_mem = active_mem.loai_the.value if hasattr(active_mem.loai_the, "value") else str(active_mem.loai_the)
+            rate_mem = get_discount_rate(tier_mem)
+        best_rate = max(rate_spend, rate_mem)
+        if best_rate > 0:
+            giam_gia_moi = (tien_san_moi * Decimal(str(best_rate))).quantize(Decimal("1"))
+
+    old_info = f"{b.ngay_dat} {b.gio_bat_dau.strftime('%H:%M')}-{b.gio_ket_thuc.strftime('%H:%M')}"
+    b.ngay_dat = payload.ngay_dat
+    b.gio_bat_dau = payload.gio_bat_dau
+    b.gio_ket_thuc = payload.gio_ket_thuc
+    b.so_gio = so_gio_moi
+    b.tien_san = tien_san_moi
+
+    note = (
+        f"[ĐỔI LỊCH {datetime.now().strftime('%H:%M %d/%m')}] Từ {old_info} sang "
+        f"{payload.ngay_dat} {payload.gio_bat_dau.strftime('%H:%M')}-{payload.gio_ket_thuc.strftime('%H:%M')} bởi {user.ho_ten}"
+    )
+    b.ghi_chu = (b.ghi_chu + "\n" + note) if b.ghi_chu else note
+
+    if b.invoice:
+        b.invoice.tien_san = tien_san_moi
+        b.invoice.giam_gia = giam_gia_moi
+        b.invoice.tong_cong = tien_san_moi + (b.invoice.tien_dich_vu or Decimal(0)) - giam_gia_moi
 
     db.commit()
     db.refresh(b)

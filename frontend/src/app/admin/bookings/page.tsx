@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import RescheduleModal from "@/components/RescheduleModal";
 import { apiGet, apiPost, apiDelete, formatVND, formatDate, getUser } from "@/lib/api";
 import {
-  Loader2, CheckCircle2, DollarSign, Search, X, Clock, XCircle, 
-  RotateCcw, Receipt, Sparkles, Undo2, ShoppingCart, Trash2, Plus
+  Loader2, CheckCircle2, DollarSign, Search, X, Clock, XCircle,
+  RotateCcw, Receipt, Sparkles, Undo2, ShoppingCart, Trash2, Plus, CalendarClock
 } from "lucide-react";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
@@ -28,6 +29,7 @@ export default function BookingsAdmin() {
   const [billTarget, setBillTarget] = useState<any>(null);
   const [cancelTarget, setCancelTarget] = useState<any>(null);
   const [serviceTarget, setServiceTarget] = useState<any>(null);
+  const [rescheduleTarget, setRescheduleTarget] = useState<any>(null);
 
   // States form Hủy
   const [lyDoHuy, setLyDoHuy] = useState("");
@@ -290,6 +292,12 @@ export default function BookingsAdmin() {
                           </button>
                         )}
 
+                        {["CHO_XAC_NHAN", "DA_XAC_NHAN"].includes(b.trang_thai) && (
+                          <button onClick={() => setRescheduleTarget(b)} className="p-2 bg-cyan-50 text-cyan-600 rounded-xl hover:bg-cyan-600 hover:text-white transition-all shadow-sm" title="Đổi lịch">
+                            <CalendarClock size={18}/>
+                          </button>
+                        )}
+
                         <button onClick={() => setBillTarget(b)} className="p-2 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-900 hover:text-white transition-all shadow-sm" title="Xem Hóa đơn">
                           <Receipt size={18}/>
                         </button>
@@ -506,6 +514,17 @@ export default function BookingsAdmin() {
           </div>
         )}
       </AnimatePresence>
+
+      {rescheduleTarget && (
+        <RescheduleModal
+          booking={rescheduleTarget}
+          onClose={() => setRescheduleTarget(null)}
+          onSuccess={(updated) => {
+            setRescheduleTarget(null);
+            setList((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -78,3 +78,36 @@ def send_booking_success_email(
     </div>
     """
     _send(to_email, f"Biên nhận đặt sân {ma_dat_san}", html)
+
+
+def send_booking_cancelled_email(
+    to_email: Optional[str],
+    ma_dat_san: str,
+    ten_san: str,
+    ngay_dat: date,
+    gio_bat_dau: time,
+    gio_ket_thuc: time,
+    ly_do_huy: Optional[str],
+    hoan_tien: bool,
+) -> None:
+    refund_text = (
+        "Bạn sẽ được hoàn 50% tiền sân trong 1-3 ngày làm việc."
+        if hoan_tien
+        else "Đơn không thuộc diện hoàn tiền theo chính sách hủy sân."
+    )
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color:#1a1a1a;">
+      <h2 style="color:#ef4444;">Đơn đặt sân đã được hủy</h2>
+      <p>Đơn đặt sân sau đây của bạn tại <strong>Sân Bóng UIT</strong> đã được hủy:</p>
+      <table style="width:100%; border-collapse: collapse; margin: 16px 0;">
+        <tr><td style="padding:6px 0; color:#888;">Mã đặt sân</td><td style="padding:6px 0; text-align:right; font-weight:bold;">{ma_dat_san}</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Sân</td><td style="padding:6px 0; text-align:right;">{ten_san}</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Ngày</td><td style="padding:6px 0; text-align:right;">{ngay_dat.strftime('%d/%m/%Y')}</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Khung giờ</td><td style="padding:6px 0; text-align:right;">{gio_bat_dau.strftime('%H:%M')} - {gio_ket_thuc.strftime('%H:%M')}</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Lý do hủy</td><td style="padding:6px 0; text-align:right;">{ly_do_huy or "Không rõ"}</td></tr>
+      </table>
+      <p>{refund_text}</p>
+      <p style="color:#888; font-size: 12px;">Nếu bạn không yêu cầu hủy đơn này, vui lòng liên hệ Sân Bóng UIT ngay.</p>
+    </div>
+    """
+    _send(to_email, f"Đơn đặt sân {ma_dat_san} đã bị hủy", html)

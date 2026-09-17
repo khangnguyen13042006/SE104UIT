@@ -53,7 +53,7 @@ def auto_clean_bookings():
             if b.invoice and b.invoice.trang_thai == PaymentStatus.CHUA_THANH_TOAN:
                 b.invoice.trang_thai = PaymentStatus.HUY
             
-            print(f"[AUTO-CANCEL] Đã hủy đơn: {b.ma_booking or 'N/A'}")
+            print(f"[AUTO-CANCEL] Đã hủy đơn: {b.ma_dat_san or 'N/A'}")
 
         # --- 2. TỰ ĐỘNG HOÀN THÀNH: Đơn Đã xác nhận khi qua giờ kết thúc ---
         # So sánh dựa trên ngày đặt (ngay_dat) và giờ Việt Nam (now_vn)
@@ -75,7 +75,7 @@ def auto_clean_bookings():
                     if svc and svc.la_cho_thue:
                         svc.ton_kho += bs.so_luong
                 
-                print(f"[AUTO-COMPLETE] Đã hoàn thành đơn: {b.ma_booking or 'N/A'}")
+                print(f"[AUTO-COMPLETE] Đã hoàn thành đơn: {b.ma_dat_san or 'N/A'}")
                 
         db.commit()
     except Exception as e:

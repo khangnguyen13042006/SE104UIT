@@ -301,6 +301,31 @@ def validate_confirm_booking_action(db: Session, action: Optional[dict]) -> Opti
     }
 
 
+def validate_cancel_booking_action(db: Session, action: Optional[dict]) -> Optional[dict]:
+    """Hậu kiểm đề xuất 'hủy booking' do AI sinh ra trước khi FE gọi API thật."""
+    if not isinstance(action, dict):
+        return None
+    ma_dat_san = str(action.get("ma_dat_san") or "").strip().upper()
+    if not ma_dat_san:
+        return None
+    booking = db.query(Booking).filter(Booking.ma_dat_san == ma_dat_san).first()
+    if not booking or booking.trang_thai not in (BookingStatus.CHO_XAC_NHAN, BookingStatus.DA_XAC_NHAN):
+        return None
+
+    ly_do_huy = str(action.get("ly_do_huy") or "").strip() or "Hủy theo yêu cầu qua trợ lý AI nội bộ"
+
+    hoan_tien_raw = action.get("hoan_tien")
+    hoan_tien = hoan_tien_raw if isinstance(hoan_tien_raw, bool) else None
+
+    return {
+        "booking_id": booking.id,
+        "ma_dat_san": booking.ma_dat_san,
+        "ten_san": booking.san.ten_san if booking.san else "",
+        "ly_do_huy": ly_do_huy,
+        "hoan_tien": hoan_tien,
+    }
+
+
 def validate_create_field_action(action: Optional[dict]) -> Optional[dict]:
     """Hậu kiểm đề xuất 'tạo sân mới' do AI sinh ra trước khi FE gọi API thật."""
     if not isinstance(action, dict):
@@ -647,7 +672,7 @@ BOOKING ĐANG CHỜ XÁC NHẬN:
 {chr(10).join(low_rating_data) if low_rating_data else "Không có đánh giá thấp nào gần đây."}
 
 QUY TẮC PHẢN HỒI (BẮT BUỘC TRẢ VỀ JSON):
-Luôn trả về đúng 1 JSON object gồm 6 khóa: "reply", "add_service_action", "create_service_action", "confirm_booking_action", "create_field_action", "update_field_action".
+Luôn trả về đúng 1 JSON object gồm 7 khóa: "reply", "add_service_action", "create_service_action", "confirm_booking_action", "cancel_booking_action", "create_field_action", "update_field_action".
 
 1. "reply": Câu trả lời tiếng Việt ngắn gọn, chuyên nghiệp, dựa đúng trên dữ liệu hệ thống ở trên. Có thể chủ động nhắc nhân viên về dịch vụ sắp hết hàng, booking chờ xác nhận hoặc đánh giá thấp nếu phù hợp với câu hỏi.
 2. "add_service_action": CHỈ điền khi nhân viên muốn THÊM một dịch vụ có sẵn vào bill của MỘT BOOKING ĐÃ TỒN TẠI (ví dụ "thêm 2 nước cho đơn BK12345678"):
@@ -658,6 +683,9 @@ Luôn trả về đúng 1 JSON object gồm 6 khóa: "reply", "add_service_actio
    Nếu không đủ thông tin, gán null.
 4. "confirm_booking_action": CHỈ điền khi nhân viên muốn XÁC NHẬN một booking đang ở trạng thái "Chờ xác nhận" (ví dụ "xác nhận đơn BK12345678", "duyệt đơn BK..."):
    Tạo object gồm: "ma_dat_san" (str). Nếu thiếu mã đơn, gán null.
+4b. "cancel_booking_action": CHỈ điền khi nhân viên muốn HỦY một booking đang "Chờ xác nhận" hoặc "Đã xác nhận" (ví dụ "hủy đơn BK12345678 vì khách báo bận"):
+   Tạo object gồm: "ma_dat_san" (str), "ly_do_huy" (str, tóm tắt lý do nếu nhân viên có nêu, để trống nếu không rõ), "hoan_tien" (true/false CHỈ khi nhân viên nói rõ có/không hoàn tiền, ngược lại để null cho hệ thống tự áp policy 24h).
+   Nếu thiếu mã đơn, gán null.
 5. "create_field_action": CHỈ điền khi nhân viên muốn TẠO MỚI một sân bóng (ví dụ "thêm sân mới tên Sân 6, loại 7 người, sức chứa 14, giá thường 200000, giá cao điểm 250000"):
    Tạo object gồm: "ten_san" (str), "loai_san" ("SAN_5"|"SAN_7"|"SAN_11"), "suc_chua" (int), "gia_tieu_chuan" (number), "gia_cao_diem" (number), "mo_ta" (str, có thể rỗng).
    Nếu không đủ thông tin, gán null.
@@ -665,8 +693,8 @@ Luôn trả về đúng 1 JSON object gồm 6 khóa: "reply", "add_service_actio
    Tạo object gồm: "ten_san" (str, tên sân cần sửa), và CHỈ các trường thực sự cần đổi trong số: "gia_tieu_chuan" (number), "gia_cao_diem" (number), "trang_thai" ("HOAT_DONG"|"BAO_TRI"|"DONG_CUA").
    Nếu không xác định được sân hoặc không có trường nào cần đổi, gán null.
 
-QUY TẮC QUAN TRỌNG NHẤT: Hệ thống chỉ thực sự thực hiện hành động khi 1 trong 5 khóa action ở trên khác null VÀ được người dùng bấm xác nhận trên giao diện — "reply" của bạn KHÔNG bao giờ tự ý thực hiện điều gì. TUYỆT ĐỐI KHÔNG được viết trong "reply" rằng đã xác nhận/hủy/sửa/xóa/thêm THÀNH CÔNG nếu action tương ứng không được điền ở trên — làm vậy là nói dối nhân viên về trạng thái hệ thống. Nếu yêu cầu của nhân viên không khớp với bất kỳ action nào ở trên (ví dụ: đổi giờ một booking cụ thể, hủy booking, xóa dịch vụ...), phải trả lời rõ ràng là thao tác này chưa được hỗ trợ qua chat và hướng dẫn dùng đúng trang quản trị tương ứng, tất cả action đều để null.
-Mỗi phản hồi chỉ được điền khác null TỐI ĐA MỘT trong 5 khóa action; các khóa còn lại luôn là null. Nếu câu hỏi chỉ là hỏi thông tin/báo cáo, tất cả action đều null.
+QUY TẮC QUAN TRỌNG NHẤT: Hệ thống chỉ thực sự thực hiện hành động khi 1 trong 6 khóa action ở trên khác null VÀ được người dùng bấm xác nhận trên giao diện — "reply" của bạn KHÔNG bao giờ tự ý thực hiện điều gì. TUYỆT ĐỐI KHÔNG được viết trong "reply" rằng đã xác nhận/hủy/sửa/xóa/thêm THÀNH CÔNG nếu action tương ứng không được điền ở trên — làm vậy là nói dối nhân viên về trạng thái hệ thống. Nếu yêu cầu của nhân viên không khớp với bất kỳ action nào ở trên (ví dụ: đổi giờ một booking cụ thể, xóa dịch vụ khỏi bill...), phải trả lời rõ ràng là thao tác này chưa được hỗ trợ qua chat và hướng dẫn dùng đúng trang quản trị tương ứng, tất cả action đều để null.
+Mỗi phản hồi chỉ được điền khác null TỐI ĐA MỘT trong 6 khóa action; các khóa còn lại luôn là null. Nếu câu hỏi chỉ là hỏi thông tin/báo cáo, tất cả action đều null.
 """
 
         full_prompt = f"{history_context}Nhân viên vừa nhắn: \"{req.message}\""
@@ -705,6 +733,7 @@ Mỗi phản hồi chỉ được điền khác null TỐI ĐA MỘT trong 5 kh�
                     add_service_action = validate_add_service_action(db, parsed.get("add_service_action"))
                     create_service_action = validate_create_service_action(parsed.get("create_service_action"))
                     confirm_booking_action = validate_confirm_booking_action(db, parsed.get("confirm_booking_action"))
+                    cancel_booking_action = validate_cancel_booking_action(db, parsed.get("cancel_booking_action"))
                     create_field_action = validate_create_field_action(parsed.get("create_field_action"))
                     update_field_action = validate_update_field_action(db, parsed.get("update_field_action"))
 
@@ -713,6 +742,7 @@ Mỗi phản hồi chỉ được điền khác null TỐI ĐA MỘT trong 5 kh�
                         "add_service_action": add_service_action,
                         "create_service_action": create_service_action,
                         "confirm_booking_action": confirm_booking_action,
+                        "cancel_booking_action": cancel_booking_action,
                         "create_field_action": create_field_action,
                         "update_field_action": update_field_action,
                     }

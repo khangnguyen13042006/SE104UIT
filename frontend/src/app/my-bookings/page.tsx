@@ -2,8 +2,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import RescheduleModal from "@/components/RescheduleModal";
 import { apiGet, apiPost, formatVND, formatDate, getUser } from "@/lib/api";
-import { Calendar, Clock, MapPin, X, Star, AlertCircle, Loader2, RotateCcw, Ban, CheckCircle2 } from "lucide-react";
+import { Calendar, Clock, MapPin, X, Star, AlertCircle, Loader2, RotateCcw, Ban, CheckCircle2, Receipt, CalendarClock } from "lucide-react";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   CHO_XAC_NHAN: { text: "Chờ xác nhận", cls: "bg-amber-100 text-amber-800 border-amber-200" },
@@ -21,6 +22,8 @@ export default function MyBookingsPage() {
   const [filter, setFilter] = useState<string>("");
   const [cancelTarget, setCancelTarget] = useState<any>(null);
   const [feedbackTarget, setFeedbackTarget] = useState<any>(null);
+  const [billTarget, setBillTarget] = useState<any>(null);
+  const [rescheduleTarget, setRescheduleTarget] = useState<any>(null);
 
   async function load() {
     setLoading(true);
@@ -99,7 +102,9 @@ export default function MyBookingsPage() {
               <BookingCard key={b.id} b={b}
                 feedback={feedbackByBooking[b.id]}
                 onCancel={() => setCancelTarget(b)}
-                onFeedback={() => setFeedbackTarget(b)} />
+                onFeedback={() => setFeedbackTarget(b)}
+                onViewBill={() => setBillTarget(b)}
+                onReschedule={() => setRescheduleTarget(b)} />
             ))}
           </div>
         )}
@@ -113,7 +118,92 @@ export default function MyBookingsPage() {
         <FeedbackModal booking={feedbackTarget} onClose={() => setFeedbackTarget(null)}
           onSuccess={() => { setFeedbackTarget(null); load(); }} />
       )}
+      {billTarget && (
+        <InvoiceModal booking={billTarget} onClose={() => setBillTarget(null)} />
+      )}
+      {rescheduleTarget && (
+        <RescheduleModal
+          booking={rescheduleTarget}
+          onClose={() => setRescheduleTarget(null)}
+          onSuccess={() => { setRescheduleTarget(null); load(); }}
+        />
+      )}
     </>
+  );
+}
+
+function InvoiceModal({ booking, onClose }: { booking: any; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+      <div className="bg-white text-slate-900 w-full max-w-lg rounded-sm shadow-2xl overflow-hidden border-t-[12px] border-primary">
+        <div className="p-8 border-b border-dashed border-slate-200 text-center relative">
+          <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-900">
+            <X size={24} />
+          </button>
+          <div className="font-bold text-primary mb-2">SÂN BÓNG ĐÁ KICKOFF</div>
+          <h2 className="text-2xl font-black uppercase tracking-tight mb-1">HÓA ĐƠN DỊCH VỤ</h2>
+          <div className="text-[10px] font-mono text-slate-400">Số đơn: {booking.ma_dat_san}</div>
+        </div>
+        <div className="p-8 space-y-6">
+          <div className="grid grid-cols-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 gap-8">
+            <div>
+              <div>Sân</div>
+              <div className="text-slate-900 text-sm">{booking.ten_san}</div>
+            </div>
+            <div className="text-right">
+              <div>Ngày thi đấu</div>
+              <div className="text-slate-900 text-sm">{formatDate(booking.ngay_dat)}</div>
+            </div>
+          </div>
+
+          <table className="w-full text-sm">
+            <thead className="border-b-2 border-slate-900 font-black uppercase text-[10px]">
+              <tr>
+                <th className="py-2 text-left">Nội dung</th>
+                <th className="py-2 text-right">Thành tiền</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              <tr>
+                <td className="py-4 font-medium italic">
+                  Tiền thuê sân
+                  <div className="text-[10px] text-slate-400 font-normal">
+                    Thời gian: {booking.gio_bat_dau?.slice(0, 5)} - {booking.gio_ket_thuc?.slice(0, 5)}
+                  </div>
+                </td>
+                <td className="py-4 text-right font-black">{formatVND(booking.tien_san)}</td>
+              </tr>
+              {booking.services?.map((s: any) => (
+                <tr key={s.id}>
+                  <td className="py-3 text-slate-500">
+                    {s.ten_dich_vu} x{s.so_luong}
+                  </td>
+                  <td className="py-3 text-right font-bold">{formatVND(s.thanh_tien)}</td>
+                </tr>
+              ))}
+              {booking.invoice?.giam_gia > 0 && (
+                <tr>
+                  <td className="py-3 text-primary italic">Giảm giá thành viên</td>
+                  <td className="py-3 text-right font-bold text-primary">-{formatVND(booking.invoice.giam_gia)}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <div className="pt-6 border-t-2 border-slate-900 flex justify-between items-center">
+            <span className="font-black uppercase text-sm">Tổng cộng</span>
+            <span className="text-3xl font-black text-primary">
+              {formatVND(booking.invoice?.tong_cong || booking.tien_san)}
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-full py-4 bg-slate-900 text-white font-black text-xs uppercase tracking-[0.2em] hover:bg-primary transition-colors"
+          >
+            Đóng Hóa Đơn
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -172,9 +262,10 @@ function RefundStatusBox({ booking }: { booking: any }) {
   );
 }
 
-function BookingCard({ b, feedback, onCancel, onFeedback }: any) {
+function BookingCard({ b, feedback, onCancel, onFeedback, onViewBill, onReschedule }: any) {
   const st = STATUS_LABEL[b.trang_thai];
   const canCancel = ["CHO_XAC_NHAN", "DA_XAC_NHAN"].includes(b.trang_thai);
+  const canReschedule = ["CHO_XAC_NHAN", "DA_XAC_NHAN"].includes(b.trang_thai);
   const canFeedback = b.trang_thai === "HOAN_THANH" && !feedback;
   const hoursUntil = (new Date(`${b.ngay_dat}T${b.gio_bat_dau}`).getTime() - Date.now()) / 3600000;
 
@@ -190,28 +281,19 @@ function BookingCard({ b, feedback, onCancel, onFeedback }: any) {
         </div>
         <div className="text-right">
           <div className="text-2xl font-display font-bold text-primary">{formatVND(b.invoice?.tong_cong || b.tien_san)}</div>
-          {b.invoice && parseFloat(b.invoice.tien_dich_vu) > 0 && (
-            <div className="text-xs text-muted-foreground">
-              Sân: {formatVND(b.tien_san)} + DV: {formatVND(b.invoice.tien_dich_vu)}
-            </div>
-          )}
-          <div className="text-xs text-muted-foreground mt-0.5">{b.hinh_thuc_thanh_toan === "TIEN_MAT" ? "Tiền mặt" : "Chuyển khoản"}</div>
+          <button
+            onClick={onViewBill}
+            className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+          >
+            <Receipt size={13} /> Xem hóa đơn
+          </button>
         </div>
       </div>
 
       <div className="flex flex-wrap gap-4 text-sm text-muted-foreground mb-3">
         <span className="flex items-center gap-1"><Calendar size={14} /> {formatDate(b.ngay_dat)}</span>
         <span className="flex items-center gap-1"><Clock size={14} /> {b.gio_bat_dau.slice(0, 5)} - {b.gio_ket_thuc.slice(0, 5)} ({b.so_gio}h)</span>
-        {b.services?.length > 0 && (
-          <span className="flex items-center gap-1">🛍️ {b.services.length} dịch vụ</span>
-        )}
       </div>
-
-      {b.services?.length > 0 && (
-        <div className="text-xs text-muted-foreground mb-3 pl-1">
-          {b.services.map((s: any) => `${s.ten_dich_vu} ×${s.so_luong}`).join(" • ")}
-        </div>
-      )}
 
       {/* Cancellation reason + refund status — 3 states: No Refund / Pending Refund / Refunded */}
       {b.trang_thai === "HUY" && (
@@ -253,8 +335,15 @@ function BookingCard({ b, feedback, onCancel, onFeedback }: any) {
         </div>
       )}
 
-      {(canCancel || canFeedback) && (
-        <div className="flex gap-2 pt-3 border-t border-border">
+      {(canCancel || canReschedule || canFeedback) && (
+        <div className="flex flex-wrap gap-2 pt-3 border-t border-border">
+          {canReschedule && (
+            <button onClick={onReschedule}
+              className="px-4 py-2 text-sm font-semibold text-foreground hover:bg-secondary rounded-lg transition">
+              <CalendarClock size={14} className="inline mr-1" />
+              Đổi lịch
+            </button>
+          )}
           {canCancel && (
             <button onClick={onCancel}
               className="px-4 py-2 text-sm font-semibold text-destructive hover:bg-destructive/10 rounded-lg transition">
