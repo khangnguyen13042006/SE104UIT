@@ -10,10 +10,11 @@ from google.genai import types
 
 from app.core.database import get_db
 from app.core.security import get_current_user_optional, require_roles
-from app.core.config import FieldStatus, ServiceStatus, BookingStatus, UserRole
+from app.core.config import FieldStatus, ServiceStatus, BookingStatus, UserRole, MEMBERSHIP_NAME, FieldType
 from app.models import Field, Booking, Service, User, Feedback
 from app.utils.helpers import (
     has_booking_conflict, get_active_membership, get_discount_rate, get_feedback_snapshot,
+    calculate_lifetime_spend, calculate_tier_from_spend,
 )
 
 router = APIRouter(prefix="/api/chat", tags=["Chatbot"])
@@ -283,6 +284,91 @@ def validate_create_service_action(action: Optional[dict]) -> Optional[dict]:
     }
 
 
+def validate_confirm_booking_action(db: Session, action: Optional[dict]) -> Optional[dict]:
+    """Hậu kiểm đề xuất 'xác nhận booking' do AI sinh ra trước khi FE gọi API thật."""
+    if not isinstance(action, dict):
+        return None
+    ma_dat_san = str(action.get("ma_dat_san") or "").strip().upper()
+    if not ma_dat_san:
+        return None
+    booking = db.query(Booking).filter(Booking.ma_dat_san == ma_dat_san).first()
+    if not booking or booking.trang_thai != BookingStatus.CHO_XAC_NHAN:
+        return None
+    return {
+        "booking_id": booking.id,
+        "ma_dat_san": booking.ma_dat_san,
+        "ten_san": booking.san.ten_san if booking.san else "",
+    }
+
+
+def validate_create_field_action(action: Optional[dict]) -> Optional[dict]:
+    """Hậu kiểm đề xuất 'tạo sân mới' do AI sinh ra trước khi FE gọi API thật."""
+    if not isinstance(action, dict):
+        return None
+    ten_san = str(action.get("ten_san") or "").strip()
+    if not ten_san:
+        return None
+    loai_san_raw = str(action.get("loai_san") or "").strip().upper()
+    if loai_san_raw not in {t.value for t in FieldType}:
+        return None
+    try:
+        suc_chua = int(action.get("suc_chua", 0))
+        gia_tieu_chuan = float(action.get("gia_tieu_chuan", 0))
+        gia_cao_diem = float(action.get("gia_cao_diem", 0))
+    except (TypeError, ValueError):
+        return None
+    if suc_chua <= 0 or gia_tieu_chuan <= 0 or gia_cao_diem <= 0:
+        return None
+    return {
+        "ten_san": ten_san,
+        "loai_san": loai_san_raw,
+        "suc_chua": suc_chua,
+        "gia_tieu_chuan": gia_tieu_chuan,
+        "gia_cao_diem": max(gia_cao_diem, gia_tieu_chuan),
+        "mo_ta": str(action.get("mo_ta") or "").strip() or None,
+    }
+
+
+def validate_update_field_action(db: Session, action: Optional[dict]) -> Optional[dict]:
+    """Hậu kiểm đề xuất 'sửa giá/trạng thái sân' do AI sinh ra trước khi FE gọi API thật."""
+    if not isinstance(action, dict):
+        return None
+    ten_san_query = str(action.get("ten_san") or "").strip()
+    if not ten_san_query:
+        return None
+    field = db.query(Field).filter(Field.ten_san.ilike(f"%{ten_san_query}%")).first()
+    if not field:
+        return None
+
+    payload = {"field_id": field.id, "ten_san": field.ten_san}
+    has_change = False
+
+    if action.get("gia_tieu_chuan") is not None:
+        try:
+            v = float(action["gia_tieu_chuan"])
+            if v > 0:
+                payload["gia_tieu_chuan"] = v
+                has_change = True
+        except (TypeError, ValueError):
+            pass
+    if action.get("gia_cao_diem") is not None:
+        try:
+            v = float(action["gia_cao_diem"])
+            if v > 0:
+                payload["gia_cao_diem"] = v
+                has_change = True
+        except (TypeError, ValueError):
+            pass
+    trang_thai_raw = str(action.get("trang_thai") or "").strip().upper()
+    if trang_thai_raw in {s.value for s in FieldStatus}:
+        payload["trang_thai"] = trang_thai_raw
+        has_change = True
+
+    if not has_change:
+        return None
+    return payload
+
+
 @router.post("")
 def chat_with_bot(
     req: ChatRequest,
@@ -307,11 +393,33 @@ def chat_with_bot(
         user_bookings_data = []
 
         if current_user:
+            # Hạng tự tính theo tổng chi tiêu lũy kế (cơ chế chính của hệ thống)
+            spend = calculate_lifetime_spend(db, current_user.id)
+            tier_spend = calculate_tier_from_spend(spend)
+            rate_spend = get_discount_rate(tier_spend)
+
+            # Thẻ hội viên đã mua (nếu có) - áp dụng nếu ưu đãi cao hơn
             membership = get_active_membership(db, current_user.id)
+            rate_mem = 0.0
+            tier_mem_val = None
             if membership:
-                tier_val = membership.loai_the.value if hasattr(membership.loai_the, "value") else str(membership.loai_the)
-                discount_rate = int(get_discount_rate(tier_val) * 100)
-                membership_info = f"- Khách hàng đang có Thẻ hội viên {tier_val}, được GIẢM {discount_rate}% TIỀN SÂN."
+                tier_mem_val = membership.loai_the.value if hasattr(membership.loai_the, "value") else str(membership.loai_the)
+                rate_mem = get_discount_rate(tier_mem_val)
+
+            best_rate = max(rate_spend, rate_mem)
+            effective_tier = tier_mem_val if rate_mem >= rate_spend and tier_mem_val else tier_spend
+            tier_name = MEMBERSHIP_NAME.get(effective_tier, effective_tier)
+
+            if best_rate > 0:
+                membership_info = (
+                    f"- Hạng thành viên hiện tại (tự tính theo tổng chi tiêu, không cần đăng ký): {tier_name}, "
+                    f"được GIẢM {int(best_rate * 100)}% TIỀN SÂN. Tổng chi tiêu lũy kế: {int(spend):,}đ."
+                )
+            else:
+                membership_info = (
+                    f"- Khách hàng chưa đạt hạng thành viên nào (tổng chi tiêu lũy kế: {int(spend):,}đ). "
+                    f"Mốc kế tiếp: Bạc từ 1.000.000đ (giảm 5%)."
+                )
 
             # Tra cứu các đơn đặt sân sắp tới của khách
             upcoming = (
@@ -539,7 +647,8 @@ BOOKING ĐANG CHỜ XÁC NHẬN:
 {chr(10).join(low_rating_data) if low_rating_data else "Không có đánh giá thấp nào gần đây."}
 
 QUY TẮC PHẢN HỒI (BẮT BUỘC TRẢ VỀ JSON):
-Luôn trả về đúng 1 JSON object gồm 3 khóa:
+Luôn trả về đúng 1 JSON object gồm 6 khóa: "reply", "add_service_action", "create_service_action", "confirm_booking_action", "create_field_action", "update_field_action".
+
 1. "reply": Câu trả lời tiếng Việt ngắn gọn, chuyên nghiệp, dựa đúng trên dữ liệu hệ thống ở trên. Có thể chủ động nhắc nhân viên về dịch vụ sắp hết hàng, booking chờ xác nhận hoặc đánh giá thấp nếu phù hợp với câu hỏi.
 2. "add_service_action": CHỈ điền khi nhân viên muốn THÊM một dịch vụ có sẵn vào bill của MỘT BOOKING ĐÃ TỒN TẠI (ví dụ "thêm 2 nước cho đơn BK12345678"):
    Tạo object gồm: "ma_dat_san" (str, mã đơn được nhắc tới), "dich_vu_id" (int nếu chắc chắn biết) hoặc "dich_vu_ten" (str tên dịch vụ, có thể gần đúng), "so_luong" (int, mặc định 1).
@@ -547,7 +656,17 @@ Luôn trả về đúng 1 JSON object gồm 3 khóa:
 3. "create_service_action": CHỈ điền khi nhân viên muốn TẠO MỚI một loại dịch vụ trong danh mục (ví dụ "tạo dịch vụ mới tên Khăn lạnh giá 5000 đơn vị Cái tồn kho 20"):
    Tạo object gồm: "ten_dich_vu" (str), "don_gia" (number), "don_vi_tinh" (str, mặc định "Cái"), "ton_kho" (int, mặc định 0), "la_cho_thue" (bool, true nếu là đồ cho thuê như giày/áo, mặc định false).
    Nếu không đủ thông tin, gán null.
-Chỉ được điền khác null TỐI ĐA MỘT trong hai khóa action ở trên trong mỗi phản hồi; khóa còn lại luôn là null. Nếu câu hỏi chỉ là hỏi thông tin/báo cáo, cả hai đều null.
+4. "confirm_booking_action": CHỈ điền khi nhân viên muốn XÁC NHẬN một booking đang ở trạng thái "Chờ xác nhận" (ví dụ "xác nhận đơn BK12345678", "duyệt đơn BK..."):
+   Tạo object gồm: "ma_dat_san" (str). Nếu thiếu mã đơn, gán null.
+5. "create_field_action": CHỈ điền khi nhân viên muốn TẠO MỚI một sân bóng (ví dụ "thêm sân mới tên Sân 6, loại 7 người, sức chứa 14, giá thường 200000, giá cao điểm 250000"):
+   Tạo object gồm: "ten_san" (str), "loai_san" ("SAN_5"|"SAN_7"|"SAN_11"), "suc_chua" (int), "gia_tieu_chuan" (number), "gia_cao_diem" (number), "mo_ta" (str, có thể rỗng).
+   Nếu không đủ thông tin, gán null.
+6. "update_field_action": CHỈ điền khi nhân viên muốn SỬA GIÁ GIỜ THƯỜNG/CAO ĐIỂM hoặc TRẠNG THÁI của một sân đã tồn tại (ví dụ "chỉnh giá giờ cao điểm sân 1 lên 300000", "cho sân 2 bảo trì"):
+   Tạo object gồm: "ten_san" (str, tên sân cần sửa), và CHỈ các trường thực sự cần đổi trong số: "gia_tieu_chuan" (number), "gia_cao_diem" (number), "trang_thai" ("HOAT_DONG"|"BAO_TRI"|"DONG_CUA").
+   Nếu không xác định được sân hoặc không có trường nào cần đổi, gán null.
+
+QUY TẮC QUAN TRỌNG NHẤT: Hệ thống chỉ thực sự thực hiện hành động khi 1 trong 5 khóa action ở trên khác null VÀ được người dùng bấm xác nhận trên giao diện — "reply" của bạn KHÔNG bao giờ tự ý thực hiện điều gì. TUYỆT ĐỐI KHÔNG được viết trong "reply" rằng đã xác nhận/hủy/sửa/xóa/thêm THÀNH CÔNG nếu action tương ứng không được điền ở trên — làm vậy là nói dối nhân viên về trạng thái hệ thống. Nếu yêu cầu của nhân viên không khớp với bất kỳ action nào ở trên (ví dụ: đổi giờ một booking cụ thể, hủy booking, xóa dịch vụ...), phải trả lời rõ ràng là thao tác này chưa được hỗ trợ qua chat và hướng dẫn dùng đúng trang quản trị tương ứng, tất cả action đều để null.
+Mỗi phản hồi chỉ được điền khác null TỐI ĐA MỘT trong 5 khóa action; các khóa còn lại luôn là null. Nếu câu hỏi chỉ là hỏi thông tin/báo cáo, tất cả action đều null.
 """
 
         full_prompt = f"{history_context}Nhân viên vừa nhắn: \"{req.message}\""
@@ -585,11 +704,17 @@ Chỉ được điền khác null TỐI ĐA MỘT trong hai khóa action ở tr�
 
                     add_service_action = validate_add_service_action(db, parsed.get("add_service_action"))
                     create_service_action = validate_create_service_action(parsed.get("create_service_action"))
+                    confirm_booking_action = validate_confirm_booking_action(db, parsed.get("confirm_booking_action"))
+                    create_field_action = validate_create_field_action(parsed.get("create_field_action"))
+                    update_field_action = validate_update_field_action(db, parsed.get("update_field_action"))
 
                     return {
                         "reply": parsed.get("reply", ""),
                         "add_service_action": add_service_action,
                         "create_service_action": create_service_action,
+                        "confirm_booking_action": confirm_booking_action,
+                        "create_field_action": create_field_action,
+                        "update_field_action": update_field_action,
                     }
             except Exception as err:
                 last_error = err

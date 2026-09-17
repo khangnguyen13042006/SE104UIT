@@ -7,6 +7,7 @@ from app.core.security import get_current_user, require_roles
 from app.core.config import UserRole, PaymentStatus, BookingStatus
 from app.models import Invoice, User, Booking
 from app.schemas import InvoiceOut, InvoicePayment
+from app.utils.mailer import send_booking_success_email
 
 router = APIRouter(prefix="/api/invoices", tags=["Invoices"])
 
@@ -55,8 +56,23 @@ def pay_invoice(
         raise HTTPException(400, "Hóa đơn đã thanh toán")
     inv.trang_thai = PaymentStatus.DA_THANH_TOAN
     # Auto-confirm booking
-    if inv.booking and inv.booking.trang_thai == BookingStatus.CHO_XAC_NHAN:
+    just_confirmed = bool(inv.booking and inv.booking.trang_thai == BookingStatus.CHO_XAC_NHAN)
+    if just_confirmed:
         inv.booking.trang_thai = BookingStatus.DA_XAC_NHAN
     db.commit()
     db.refresh(inv)
+
+    if just_confirmed:
+        b = inv.booking
+        recipient = b.khach_hang.email if b.khach_hang else b.email_khach_vang_lai
+        send_booking_success_email(
+            to_email=recipient,
+            ma_dat_san=b.ma_dat_san,
+            ten_san=b.san.ten_san if b.san else "",
+            ngay_dat=b.ngay_dat,
+            gio_bat_dau=b.gio_bat_dau,
+            gio_ket_thuc=b.gio_ket_thuc,
+            tong_cong=inv.tong_cong,
+            trang_thai_thanh_toan=inv.trang_thai.value,
+        )
     return inv

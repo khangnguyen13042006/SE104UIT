@@ -15,8 +15,11 @@ import {
   PackagePlus,
   CheckCircle2,
   XCircle,
+  ClipboardCheck,
+  MapPin,
+  Settings2,
 } from "lucide-react";
-import { apiPost, formatVND, getUser } from "@/lib/api";
+import { apiPost, apiPut, formatVND, getUser } from "@/lib/api";
 
 const STAFF_ROLES = ["ADMIN", "QUAN_LY", "NHAN_VIEN"];
 
@@ -45,12 +48,38 @@ interface CreateServiceActionPayload {
   la_cho_thue: boolean;
 }
 
+interface ConfirmBookingActionPayload {
+  booking_id: number;
+  ma_dat_san: string;
+  ten_san: string;
+}
+
+interface CreateFieldActionPayload {
+  ten_san: string;
+  loai_san: string;
+  suc_chua: number;
+  gia_tieu_chuan: number;
+  gia_cao_diem: number;
+  mo_ta: string | null;
+}
+
+interface UpdateFieldActionPayload {
+  field_id: number;
+  ten_san: string;
+  gia_tieu_chuan?: number;
+  gia_cao_diem?: number;
+  trang_thai?: string;
+}
+
 type ActionStatus = "idle" | "loading" | "done" | "error";
 
 type ChatAction =
   | { type: "booking"; payload: BookingActionPayload }
   | { type: "add_service"; payload: AddServiceActionPayload; status?: ActionStatus; resultText?: string }
-  | { type: "create_service"; payload: CreateServiceActionPayload; status?: ActionStatus; resultText?: string };
+  | { type: "create_service"; payload: CreateServiceActionPayload; status?: ActionStatus; resultText?: string }
+  | { type: "confirm_booking"; payload: ConfirmBookingActionPayload; status?: ActionStatus; resultText?: string }
+  | { type: "create_field"; payload: CreateFieldActionPayload; status?: ActionStatus; resultText?: string }
+  | { type: "update_field"; payload: UpdateFieldActionPayload; status?: ActionStatus; resultText?: string };
 
 interface Message {
   sender: "user" | "bot";
@@ -61,7 +90,33 @@ interface Message {
 const CUSTOMER_GREETING =
   "Xin chào! Em là lễ tân ảo Sân Bóng UIT. Anh/chị cần kiểm tra lịch trống, bảng giá hay cần tư vấn chọn sân nào cứ nhắn em nhé!";
 const ADMIN_GREETING =
-  "Xin chào! Em là trợ lý nội bộ. Anh/chị có thể hỏi booking đang chờ xác nhận, dịch vụ sắp hết hàng, đánh giá thấp gần đây, hoặc nhờ em thêm dịch vụ vào bill / tạo dịch vụ mới.";
+  "Xin chào! Em là trợ lý nội bộ. Anh/chị có thể hỏi booking đang chờ xác nhận, dịch vụ sắp hết hàng, đánh giá thấp gần đây, hoặc nhờ em xác nhận booking / thêm dịch vụ vào bill / tạo dịch vụ mới / thêm sân / sửa giá sân.";
+
+const CHAT_STORAGE_KEY = { customer: "kickoff_chat_customer_v1", admin: "kickoff_chat_admin_v1" } as const;
+
+function defaultMessages(mode: "customer" | "admin"): Message[] {
+  return [{ sender: "bot", text: mode === "admin" ? ADMIN_GREETING : CUSTOMER_GREETING }];
+}
+
+// Lưu hội thoại vào sessionStorage: giữ nguyên cho tới khi tab/trình duyệt bị đóng, mất khi đóng tab.
+function loadMessages(mode: "customer" | "admin"): Message[] {
+  if (typeof window === "undefined") return defaultMessages(mode);
+  try {
+    const raw = sessionStorage.getItem(CHAT_STORAGE_KEY[mode]);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return defaultMessages(mode);
+}
+
+function saveMessages(mode: "customer" | "admin", messages: Message[]) {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(CHAT_STORAGE_KEY[mode], JSON.stringify(messages));
+  } catch {}
+}
 
 const CUSTOMER_QUICK_PROMPTS = [
   "⚽ Xem sân trống hôm nay",
@@ -105,7 +160,7 @@ export default function ChatWidget() {
 
   const [user, setUser] = useState<any>(null);
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([{ sender: "bot", text: CUSTOMER_GREETING }]);
+  const [messages, setMessages] = useState<Message[]>(() => loadMessages(isAdminMode ? "admin" : "customer"));
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -115,14 +170,19 @@ export default function ChatWidget() {
     setUser(getUser());
   }, [pathname]);
 
-  // Reset hội thoại khi chuyển qua lại giữa chế độ khách hàng <-> nội bộ (2 endpoint/ngữ cảnh khác nhau)
+  // Chuyển qua lại giữa chế độ khách hàng <-> nội bộ: nạp đúng lịch sử đã lưu của chế độ đó (2 ngữ cảnh tách biệt)
   useEffect(() => {
     if (prevModeRef.current !== isAdminMode) {
       prevModeRef.current = isAdminMode;
-      setMessages([{ sender: "bot", text: isAdminMode ? ADMIN_GREETING : CUSTOMER_GREETING }]);
+      setMessages(loadMessages(isAdminMode ? "admin" : "customer"));
       setIsOpen(false);
     }
   }, [isAdminMode]);
+
+  // Lưu hội thoại mỗi khi thay đổi, giữ tới khi đóng tab (sessionStorage)
+  useEffect(() => {
+    saveMessages(isAdminMode ? "admin" : "customer", messages);
+  }, [messages, isAdminMode]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -153,6 +213,12 @@ export default function ChatWidget() {
         action = { type: "add_service", payload: data.add_service_action, status: "idle" };
       } else if (data.create_service_action) {
         action = { type: "create_service", payload: data.create_service_action, status: "idle" };
+      } else if (data.confirm_booking_action) {
+        action = { type: "confirm_booking", payload: data.confirm_booking_action, status: "idle" };
+      } else if (data.create_field_action) {
+        action = { type: "create_field", payload: data.create_field_action, status: "idle" };
+      } else if (data.update_field_action) {
+        action = { type: "update_field", payload: data.update_field_action, status: "idle" };
       }
 
       setMessages((prev) => [...prev, { sender: "bot", text: data.reply, action }]);
@@ -182,7 +248,7 @@ export default function ChatWidget() {
   };
 
   const handleResetChat = () => {
-    setMessages([{ sender: "bot", text: isAdminMode ? ADMIN_GREETING : CUSTOMER_GREETING }]);
+    setMessages(defaultMessages(isAdminMode ? "admin" : "customer"));
   };
 
   const handleAutoFill = (action: BookingActionPayload) => {
@@ -229,6 +295,40 @@ export default function ChatWidget() {
     try {
       await apiPost("/api/services", payload);
       updateActionAt(idx, { status: "done", resultText: `Đã tạo dịch vụ "${payload.ten_dich_vu}" thành công.` });
+    } catch (e: any) {
+      updateActionAt(idx, { status: "error", resultText: e.message || "Có lỗi xảy ra, vui lòng thử lại." });
+    }
+  };
+
+  const handleConfirmBooking = async (idx: number, payload: ConfirmBookingActionPayload) => {
+    updateActionAt(idx, { status: "loading" });
+    try {
+      await apiPost(`/api/bookings/${payload.booking_id}/confirm`);
+      updateActionAt(idx, {
+        status: "done",
+        resultText: `Đã xác nhận đơn ${payload.ma_dat_san} (${payload.ten_san}).`,
+      });
+    } catch (e: any) {
+      updateActionAt(idx, { status: "error", resultText: e.message || "Có lỗi xảy ra, vui lòng thử lại." });
+    }
+  };
+
+  const handleCreateField = async (idx: number, payload: CreateFieldActionPayload) => {
+    updateActionAt(idx, { status: "loading" });
+    try {
+      await apiPost("/api/fields", payload);
+      updateActionAt(idx, { status: "done", resultText: `Đã tạo sân "${payload.ten_san}" thành công.` });
+    } catch (e: any) {
+      updateActionAt(idx, { status: "error", resultText: e.message || "Có lỗi xảy ra, vui lòng thử lại." });
+    }
+  };
+
+  const handleUpdateField = async (idx: number, payload: UpdateFieldActionPayload) => {
+    updateActionAt(idx, { status: "loading" });
+    try {
+      const { field_id, ten_san, ...changes } = payload;
+      await apiPut(`/api/fields/${field_id}`, changes);
+      updateActionAt(idx, { status: "done", resultText: `Đã cập nhật sân "${ten_san}".` });
     } catch (e: any) {
       updateActionAt(idx, { status: "error", resultText: e.message || "Có lỗi xảy ra, vui lòng thử lại." });
     }
@@ -338,6 +438,51 @@ export default function ChatWidget() {
                       status={m.action.status}
                       resultText={m.action.resultText}
                       onConfirm={() => handleCreateService(idx, m.action!.payload as CreateServiceActionPayload)}
+                    />
+                  )}
+
+                  {m.action?.type === "confirm_booking" && (
+                    <ActionCard
+                      icon={<ClipboardCheck className="w-3.5 h-3.5" />}
+                      description={`Xác nhận đơn ${m.action.payload.ma_dat_san} (${m.action.payload.ten_san})?`}
+                      buttonLabel="Xác nhận đơn"
+                      status={m.action.status}
+                      resultText={m.action.resultText}
+                      onConfirm={() => handleConfirmBooking(idx, m.action!.payload as ConfirmBookingActionPayload)}
+                    />
+                  )}
+
+                  {m.action?.type === "create_field" && (
+                    <ActionCard
+                      icon={<MapPin className="w-3.5 h-3.5" />}
+                      description={`Tạo sân mới "${m.action.payload.ten_san}" — loại ${m.action.payload.loai_san}, sức chứa ${m.action.payload.suc_chua}, giá thường ${formatVND(
+                        m.action.payload.gia_tieu_chuan
+                      )}/h, giá cao điểm ${formatVND(m.action.payload.gia_cao_diem)}/h?`}
+                      buttonLabel="Tạo sân"
+                      status={m.action.status}
+                      resultText={m.action.resultText}
+                      onConfirm={() => handleCreateField(idx, m.action!.payload as CreateFieldActionPayload)}
+                    />
+                  )}
+
+                  {m.action?.type === "update_field" && (
+                    <ActionCard
+                      icon={<Settings2 className="w-3.5 h-3.5" />}
+                      description={`Cập nhật sân "${m.action.payload.ten_san}": ${[
+                        m.action.payload.gia_tieu_chuan !== undefined
+                          ? `giá thường → ${formatVND(m.action.payload.gia_tieu_chuan)}/h`
+                          : null,
+                        m.action.payload.gia_cao_diem !== undefined
+                          ? `giá cao điểm → ${formatVND(m.action.payload.gia_cao_diem)}/h`
+                          : null,
+                        m.action.payload.trang_thai ? `trạng thái → ${m.action.payload.trang_thai}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(", ")}?`}
+                      buttonLabel="Cập nhật sân"
+                      status={m.action.status}
+                      resultText={m.action.resultText}
+                      onConfirm={() => handleUpdateField(idx, m.action!.payload as UpdateFieldActionPayload)}
                     />
                   )}
                 </div>

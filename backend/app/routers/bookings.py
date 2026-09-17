@@ -231,16 +231,20 @@ def create_booking(
     db.commit()
     db.refresh(booking)
 
-    send_booking_success_email(
-        to_email=current_user.email,
-        ma_dat_san=booking.ma_dat_san,
-        ten_san=field.ten_san,
-        ngay_dat=booking.ngay_dat,
-        gio_bat_dau=booking.gio_bat_dau,
-        gio_ket_thuc=booking.gio_ket_thuc,
-        tong_cong=invoice.tong_cong,
-        trang_thai_thanh_toan=invoice.trang_thai.value,
-    )
+    # Chỉ gửi mail ngay lúc tạo nếu đơn được tạo Ở TRẠNG THÁI ĐÃ XÁC NHẬN luôn (NV/QL tạo hộ khách offline,
+    # và khách đó là tài khoản đã đăng ký nên mới có email). Đơn khách tự đặt online (CHO_XAC_NHAN) sẽ được
+    # gửi mail sau, tại thời điểm xác nhận thật sự.
+    if is_offline and booking.khach_hang:
+        send_booking_success_email(
+            to_email=booking.khach_hang.email,
+            ma_dat_san=booking.ma_dat_san,
+            ten_san=field.ten_san,
+            ngay_dat=booking.ngay_dat,
+            gio_bat_dau=booking.gio_bat_dau,
+            gio_ket_thuc=booking.gio_ket_thuc,
+            tong_cong=invoice.tong_cong,
+            trang_thai_thanh_toan=invoice.trang_thai.value,
+        )
     return _booking_to_out(booking)
 
 
@@ -291,6 +295,21 @@ def list_bookings(
     return [_booking_to_out(b) for b in bookings]
 
 
+def _send_booking_confirmed_email(booking: Booking) -> None:
+    """Gửi mail biên nhận đúng lúc booking chuyển sang ĐÃ XÁC NHẬN (không phải lúc tạo đơn)."""
+    recipient = booking.khach_hang.email if booking.khach_hang else booking.email_khach_vang_lai
+    send_booking_success_email(
+        to_email=recipient,
+        ma_dat_san=booking.ma_dat_san,
+        ten_san=booking.san.ten_san if booking.san else "",
+        ngay_dat=booking.ngay_dat,
+        gio_bat_dau=booking.gio_bat_dau,
+        gio_ket_thuc=booking.gio_ket_thuc,
+        tong_cong=booking.invoice.tong_cong if booking.invoice else booking.tien_san,
+        trang_thai_thanh_toan=booking.invoice.trang_thai.value if booking.invoice else PaymentStatus.CHUA_THANH_TOAN.value,
+    )
+
+
 @router.get("/{booking_id}", response_model=BookingOut)
 def get_booking(
     booking_id: int,
@@ -319,6 +338,7 @@ def confirm_booking(
     b.trang_thai = BookingStatus.DA_XAC_NHAN
     db.commit()
     db.refresh(b)
+    _send_booking_confirmed_email(b)
     return _booking_to_out(b)
 @router.post("/{booking_id}/cancel", response_model=BookingOut)
 def cancel_booking(
@@ -570,17 +590,7 @@ def create_guest_booking(payload: GuestBookingCreate, db: Session = Depends(get_
     db.commit()
     db.refresh(booking)
 
-    recipient_email = existing.email if khach_hang_id and existing else email_kvl
-    send_booking_success_email(
-        to_email=recipient_email,
-        ma_dat_san=booking.ma_dat_san,
-        ten_san=field.ten_san,
-        ngay_dat=booking.ngay_dat,
-        gio_bat_dau=booking.gio_bat_dau,
-        gio_ket_thuc=booking.gio_ket_thuc,
-        tong_cong=tong_cong,
-        trang_thai_thanh_toan=PaymentStatus.CHUA_THANH_TOAN.value,
-    )
+    # Khách vãng lai luôn tạo ở trạng thái CHỜ XÁC NHẬN — mail biên nhận sẽ gửi sau, khi đơn thực sự được xác nhận.
     return _booking_to_out(booking)
 
 
@@ -924,6 +934,7 @@ Cấu trúc JSON:
         b.ghi_chu = (b.ghi_chu + "\n" + audit) if b.ghi_chu else audit
         db.commit()
         db.refresh(b)
+        _send_booking_confirmed_email(b)
 
         return {
             "success": True,
