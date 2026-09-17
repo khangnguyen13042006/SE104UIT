@@ -32,12 +32,9 @@ export default function BookingsAdmin() {
   const [rescheduleTarget, setRescheduleTarget] = useState<any>(null);
   const [bankInfoTarget, setBankInfoTarget] = useState<any>(null);
 
-  // States form Hủy
+  // States form Hủy: "none" = không hoàn tiền, "customer" = theo yêu cầu khách (50%), "venue_fault" = lỗi từ sân (100%)
   const [lyDoHuy, setLyDoHuy] = useState("");
-  const [isRefund, setIsRefund] = useState(false);
-  const [stkHoanTien, setStkHoanTien] = useState("");
-  const [tenTkHoanTien, setTenTkHoanTien] = useState("");
-  const [nganHangHoanTien, setNganHangHoanTien] = useState("");
+  const [refundChoice, setRefundChoice] = useState<"none" | "customer" | "venue_fault">("none");
 
   // States form Dịch vụ
   const [selSvcId, setSelSvcId] = useState("");
@@ -53,19 +50,17 @@ export default function BookingsAdmin() {
       const currentUser = getUser();
       setUser(currentUser);
 
-      // 2. Chạy auto-task nhưng CHỈ dành cho Admin/Quản lý và bắt lỗi riêng
-      if (currentUser && ["ADMIN", "QUAN_LY"].includes(currentUser.vai_tro)) {
-        try {
-          await apiPost("/api/bookings/run-auto-tasks", {});
-        } catch (taskErr) {
-          console.warn("Auto task failed (bỏ qua):", taskErr);
-        }
-      }
+      // 2+3. Chạy song song auto-task (chỉ Admin/Quản lý) với việc tải danh sách, thay vì chờ tuần tự —
+      // giảm 1 vòng round-trip mạng mỗi lần tải trang, trang phản hồi nhanh hơn rõ rệt.
+      const runAutoTasks =
+        currentUser && ["ADMIN", "QUAN_LY"].includes(currentUser.vai_tro)
+          ? apiPost("/api/bookings/run-auto-tasks", {}).catch((taskErr) => console.warn("Auto task failed (bỏ qua):", taskErr))
+          : Promise.resolve();
 
-      // 3. Tải danh sách booking và dịch vụ (Ai cũng tải được)
-      const [bData, sData] = await Promise.all([
+      const [, bData, sData] = await Promise.all([
+        runAutoTasks,
         apiGet("/api/bookings"),
-        apiGet("/api/services") 
+        apiGet("/api/services"),
       ]);
       setList(Array.isArray(bData) ? bData : []);
       setAllServices(Array.isArray(sData) ? sData : (sData?.data || []));
@@ -88,11 +83,11 @@ export default function BookingsAdmin() {
     return matchSearch && matchStatus;
   });
 
-  // Với Nhân viên (không được chọn hoàn tiền thủ công), tự tính theo policy 24h để biết có cần hỏi STK không
+  // Với Nhân viên (không được chọn hoàn tiền thủ công), tự tính theo policy 24h để hiển thị dự kiến
   const cancelHoursUntil = cancelTarget
     ? (new Date(`${cancelTarget.ngay_dat}T${cancelTarget.gio_bat_dau}`).getTime() - Date.now()) / 3600000
     : 0;
-  const cancelWillRefund = isManager ? isRefund : cancelHoursUntil >= 24;
+  const cancelWillRefund = isManager ? refundChoice !== "none" : cancelHoursUntil >= 24;
 
   async function confirmBooking(id: number) {
     if (!confirm("Xác nhận đã nhận tiền cọc và duyệt đơn này?")) return;
@@ -113,28 +108,26 @@ export default function BookingsAdmin() {
   async function handleCancel() {
     if (!lyDoHuy.trim()) return alert("Vui lòng nhập lý do hủy để lưu lịch sử");
     try {
-      // Nếu là Quản lý/Admin -> Gửi kèm cờ hoan_tien để ghi đè. Nếu là NV -> Giao cho backend tự tính 24h
+      // Nếu là Quản lý/Admin -> chọn 1 trong 3: không hoàn / theo yêu cầu khách (50%) / lỗi từ sân (100%).
+      // Nếu là NV -> giao cho backend tự tính theo policy 24h. STK hoàn tiền KHÔNG nhập ở đây —
+      // khách tự cung cấp sau tại "Lịch đặt của tôi", hệ thống sẽ gửi email hướng dẫn.
       const payload: any = { ly_do_huy: lyDoHuy };
-      if (isManager) payload.hoan_tien = isRefund;
-      if (cancelWillRefund && (stkHoanTien || tenTkHoanTien || nganHangHoanTien)) {
-        payload.stk_hoan_tien = stkHoanTien;
-        payload.ten_tk_hoan_tien = tenTkHoanTien;
-        payload.ngan_hang_hoan_tien = nganHangHoanTien;
+      if (isManager) {
+        if (refundChoice === "venue_fault") payload.loi_tu_san = true;
+        else payload.hoan_tien = refundChoice === "customer";
       }
 
       await apiPost(`/api/bookings/${cancelTarget.id}/cancel`, payload);
       setCancelTarget(null);
       setLyDoHuy("");
-      setIsRefund(false);
-      setStkHoanTien("");
-      setTenTkHoanTien("");
-      setNganHangHoanTien("");
+      setRefundChoice("none");
       load();
     } catch (e: any) { alert(e.message); }
   }
 
-  async function handleConfirmRefund(id: number) {
-    if (!confirm("Xác nhận bạn đã chuyển khoản hoàn trả 50% tiền cọc cho khách?")) return;
+  async function handleConfirmRefund(id: number, tyLeHoanTien?: number) {
+    const pct = Math.round((tyLeHoanTien || 0.5) * 100);
+    if (!confirm(`Xác nhận bạn đã chuyển khoản hoàn trả ${pct}% tiền cọc cho khách?`)) return;
     try {
       await apiPost(`/api/bookings/${id}/confirm-refund`, {});
       load();
@@ -281,12 +274,12 @@ export default function BookingsAdmin() {
                             )}
                             {b.hoan_tien === true && b.invoice?.trang_thai !== "HOAN_TIEN" && (
                               <span className="text-[9px] font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200 mt-1 whitespace-nowrap">
-                                ⏳ Chưa hoàn tiền (50%)
+                                ⏳ Chưa hoàn tiền ({Math.round((b.ty_le_hoan_tien || 0.5) * 100)}%)
                               </span>
                             )}
                             {b.hoan_tien === true && b.invoice?.trang_thai === "HOAN_TIEN" && (
                               <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200 mt-1 whitespace-nowrap">
-                                ✅ Đã hoàn tiền (50%)
+                                ✅ Đã hoàn tiền ({Math.round((b.ty_le_hoan_tien || 0.5) * 100)}%)
                               </span>
                             )}
                             {b.ly_do_huy && (
@@ -330,7 +323,7 @@ export default function BookingsAdmin() {
                         
                         {/* CHỈ HIỂN THỊ NÚT NÀY CHO ADMIN/QUẢN LÝ */}
                         {isManager && b.trang_thai === "HUY" && b.hoan_tien === true && b.invoice?.trang_thai !== "HOAN_TIEN" && (
-                          <button onClick={() => handleConfirmRefund(b.id)} className="p-2 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-600 hover:text-white transition-all shadow-sm" title="Xác nhận đã hoàn tiền cho khách">
+                          <button onClick={() => handleConfirmRefund(b.id, b.ty_le_hoan_tien)} className="p-2 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-600 hover:text-white transition-all shadow-sm" title="Xác nhận đã hoàn tiền cho khách">
                             <Undo2 size={18}/>
                           </button>
                         )}
@@ -504,29 +497,24 @@ export default function BookingsAdmin() {
 
               {/* CHỈ HIỂN THỊ TÙY CHỌN HOÀN TIỀN CHO ADMIN/QUẢN LÝ */}
               {isManager ? (
-                <div className="flex gap-6 mb-6 px-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input 
-                      type="radio" 
-                      checked={isRefund === true} 
-                      onChange={() => setIsRefund(true)} 
-                      className="w-4 h-4 accent-red-600" 
-                    />
-                    <span className="text-sm font-bold text-foreground">Có hoàn tiền (50%)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      checked={isRefund === false}
-                      onChange={() => setIsRefund(false)}
-                      className="w-4 h-4 accent-red-600"
-                    />
+                <div className="space-y-2 mb-6">
+                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-xl border border-border hover:bg-secondary/50">
+                    <input type="radio" checked={refundChoice === "none"} onChange={() => setRefundChoice("none")}
+                      className="w-4 h-4 accent-red-600" />
                     <span className="text-sm font-bold text-foreground">Không hoàn tiền</span>
                   </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-xl border border-border hover:bg-secondary/50">
+                    <input type="radio" checked={refundChoice === "customer"} onChange={() => setRefundChoice("customer")}
+                      className="w-4 h-4 accent-red-600" />
+                    <span className="text-sm font-bold text-foreground">Theo yêu cầu khách (hoàn 50%)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-xl border border-orange-200 bg-orange-50 hover:bg-orange-100">
+                    <input type="radio" checked={refundChoice === "venue_fault"} onChange={() => setRefundChoice("venue_fault")}
+                      className="w-4 h-4 accent-orange-600" />
+                    <span className="text-sm font-bold text-orange-700">Lỗi từ phía sân (hoàn 100%)</span>
+                  </label>
                 </div>
-              ) : null}
-
-              {!isManager && (
+              ) : (
                 <div className="mb-6 px-2">
                   <p className="text-sm text-orange-600 font-bold bg-orange-50 p-3 rounded-xl">
                     Còn {cancelHoursUntil.toFixed(1)}h trước giờ chơi — hệ thống sẽ tự động{" "}
@@ -536,21 +524,14 @@ export default function BookingsAdmin() {
               )}
 
               {cancelWillRefund && (
-                <div className="mb-6 space-y-2">
-                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-                    Thông tin nhận hoàn tiền {isManager ? "(nếu đã có, ví dụ khách báo qua điện thoại)" : "(hỏi khách trước khi hủy)"}
-                  </p>
-                  <input value={stkHoanTien} onChange={e => setStkHoanTien(e.target.value)} placeholder="Số tài khoản"
-                    className="w-full px-3 py-2.5 rounded-xl border border-input bg-background outline-none focus:border-red-500 transition-all" />
-                  <input value={tenTkHoanTien} onChange={e => setTenTkHoanTien(e.target.value)} placeholder="Tên chủ tài khoản"
-                    className="w-full px-3 py-2.5 rounded-xl border border-input bg-background outline-none focus:border-red-500 transition-all" />
-                  <input value={nganHangHoanTien} onChange={e => setNganHangHoanTien(e.target.value)} placeholder="Ngân hàng"
-                    className="w-full px-3 py-2.5 rounded-xl border border-input bg-background outline-none focus:border-red-500 transition-all" />
+                <div className="mb-6 p-3 rounded-xl bg-secondary/50 text-xs text-muted-foreground">
+                  Hệ thống sẽ gửi email cho khách, hướng dẫn vào mục "Lịch đặt của tôi" để cung cấp thông tin
+                  nhận hoàn tiền (Số tài khoản, Tên chủ tài khoản, Ngân hàng).
                 </div>
               )}
 
               <div className="flex gap-3">
-                <button onClick={() => { setCancelTarget(null); setLyDoHuy(""); setIsRefund(false); setStkHoanTien(""); setTenTkHoanTien(""); setNganHangHoanTien(""); }} className="flex-1 py-4 font-bold hover:bg-secondary rounded-2xl transition-all">Quay lại</button>
+                <button onClick={() => { setCancelTarget(null); setLyDoHuy(""); setRefundChoice("none"); }} className="flex-1 py-4 font-bold hover:bg-secondary rounded-2xl transition-all">Quay lại</button>
                 <button onClick={handleCancel} className="flex-1 py-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-red-600/20 active:scale-95 transition-all">Xác nhận hủy</button>
               </div>
             </motion.div>
@@ -578,7 +559,8 @@ export default function BookingsAdmin() {
                 <h3 className="text-lg font-black uppercase text-orange-600">STK nhận hoàn tiền</h3>
                 <button onClick={() => setBankInfoTarget(null)} className="p-1.5 hover:bg-secondary rounded-lg"><X size={18}/></button>
               </div>
-              <p className="text-xs text-muted-foreground mb-4">Đơn {bankInfoTarget.ma_dat_san} — {bankInfoTarget.ten_khach || "Khách lẻ"}</p>
+              <p className="text-xs text-muted-foreground mb-1">Đơn {bankInfoTarget.ma_dat_san} — {bankInfoTarget.ten_khach || "Khách lẻ"}</p>
+              <p className="text-xs font-bold text-orange-600 mb-4">Mức hoàn: {Math.round((bankInfoTarget.ty_le_hoan_tien || 0) * 100)}%</p>
               {bankInfoTarget.stk_hoan_tien || bankInfoTarget.ten_tk_hoan_tien || bankInfoTarget.ngan_hang_hoan_tien ? (
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between border-b border-border pb-2">
@@ -595,7 +577,7 @@ export default function BookingsAdmin() {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground italic">Khách chưa cung cấp thông tin nhận hoàn tiền (có thể đã báo qua điện thoại).</p>
+                <p className="text-sm text-muted-foreground italic">Khách chưa cung cấp — hệ thống đã gửi email hướng dẫn khách vào "Lịch đặt của tôi" để nhập thông tin nhận hoàn tiền.</p>
               )}
             </motion.div>
           </div>

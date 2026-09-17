@@ -74,6 +74,7 @@ class Booking(Base):
     trang_thai = Column(SQLEnum(BookingStatus), nullable=False, default=BookingStatus.CHO_XAC_NHAN)
     ly_do_huy = Column(Text)
     hoan_tien = Column(Boolean, nullable=False, default=False)  # Admin/Staff quyết định có hoàn tiền không
+    ty_le_hoan_tien = Column(Float, nullable=True)  # 0.5 = hoàn 50% (theo yêu cầu khách/policy), 1.0 = hoàn 100% (lỗi từ sân)
     ngay_huy = Column(DateTime, nullable=True)  # thời điểm booking bị hủy
     stk_hoan_tien = Column(String(30), nullable=True)  # STK khách cung cấp để nhận hoàn tiền
     ten_tk_hoan_tien = Column(String(100), nullable=True)  # Tên chủ tài khoản nhận hoàn tiền

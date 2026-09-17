@@ -18,7 +18,7 @@ from app.core.config import (
     PaymentMethod, PaymentStatus
 )
 from app.models import Booking, Field, User, Service, BookingService, Invoice
-from app.schemas import BookingCreate, BookingCancel, BookingReschedule, BookingOut, BookingServiceOut
+from app.schemas import BookingCreate, BookingCancel, BookingReschedule, BookingOut, BookingServiceOut, RefundInfoSubmit
 from app.utils.helpers import (
     generate_code, calculate_hours, calculate_field_price,
     has_booking_conflict, get_active_membership, get_discount_rate,
@@ -80,6 +80,7 @@ def _booking_to_out(b: Booking) -> dict:
         "trang_thai": b.trang_thai,
         "ly_do_huy": b.ly_do_huy,
         "hoan_tien": b.hoan_tien,
+        "ty_le_hoan_tien": b.ty_le_hoan_tien,
         "ngay_huy": b.ngay_huy,
         "stk_hoan_tien": b.stk_hoan_tien,
         "ten_tk_hoan_tien": b.ten_tk_hoan_tien,
@@ -377,40 +378,33 @@ def cancel_booking(
     hours_until = (booking_dt - now).total_seconds() / 3600
 
     # ROLE-BASED REFUND LOGIC:
-    # - Admin/Quản lý/Nhân viên: được phép set hoan_tien=True/False thủ công (override policy)
-    # - Khách hàng: KHÔNG được set; server tự tính theo policy 24h
+    # - Admin/Quản lý: được set loi_tu_san=True (lỗi/sự cố từ sân) → hoàn 100%, bất kể mốc 24h.
+    # - Admin/Quản lý/Nhân viên: được set hoan_tien=True/False thủ công (hoàn theo yêu cầu khách, 50%/0%).
+    # - Khách hàng: KHÔNG được set; server tự tính theo policy 24h.
+    # Thông tin STK nhận hoàn tiền KHÔNG thu thập ở bước hủy — khách tự cung cấp sau tại "Lịch đặt của tôi".
     is_staff = user.vai_tro in (UserRole.ADMIN, UserRole.QUAN_LY, UserRole.NHAN_VIEN)
-    if is_staff and payload.hoan_tien is not None:
-        # Staff override quyết định
+    is_manager = user.vai_tro in (UserRole.ADMIN, UserRole.QUAN_LY)
+    if is_manager and payload.loi_tu_san:
+        # Lỗi từ phía sân (sự cố, hỏng hóc...) → hoàn 100% bất kể thời điểm hủy
+        hoan_tien = True
+        refund_rate = 1.0
+        refund_note = f"[LỖI TỪ SÂN - HOÀN 100% BỞI {user.ho_ten}]"
+    elif is_staff and payload.hoan_tien is not None:
+        # Staff quyết định theo yêu cầu khách: hoàn 50% hoặc không hoàn
         hoan_tien = payload.hoan_tien
         refund_rate = 0.5 if hoan_tien else 0.0
         refund_note = f"[QUYẾT ĐỊNH BỞI {user.ho_ten}]"
     else:
         # Customer hoặc staff không override → áp policy 24h tự động
-        if payload.hoan_tien is not None and not is_staff:
-            # Customer cố tình gửi flag → ignore, không báo lỗi để giữ backward-compat
-            pass
         hoan_tien = hours_until >= 24
         refund_rate = 0.5 if hoan_tien else 0.0
         refund_note = "[Tự động theo policy 24h]"
 
-    # Nếu khách hàng tự hủy và thuộc diện hoàn tiền, bắt buộc cung cấp thông tin nhận hoàn tiền.
-    # Không hoàn tiền thì bỏ qua yêu cầu này.
-    if hoan_tien and user.vai_tro == UserRole.KHACH_HANG:
-        if not (payload.stk_hoan_tien and payload.ten_tk_hoan_tien and payload.ngan_hang_hoan_tien):
-            raise HTTPException(
-                400,
-                "Đơn này thuộc diện hoàn tiền — vui lòng cung cấp Số tài khoản, Tên chủ tài khoản và Ngân hàng để nhận hoàn tiền.",
-            )
-
     b.trang_thai = BookingStatus.HUY
     b.ly_do_huy = payload.ly_do_huy
     b.hoan_tien = hoan_tien
+    b.ty_le_hoan_tien = refund_rate if hoan_tien else 0.0
     b.ngay_huy = datetime.utcnow()
-    if hoan_tien:
-        b.stk_hoan_tien = payload.stk_hoan_tien
-        b.ten_tk_hoan_tien = payload.ten_tk_hoan_tien
-        b.ngan_hang_hoan_tien = payload.ngan_hang_hoan_tien
 
     # Hoàn dịch vụ vào kho (đặc biệt cho thuê giày...)
     for bs in b.booking_services:
@@ -439,8 +433,32 @@ def cancel_booking(
         gio_bat_dau=b.gio_bat_dau,
         gio_ket_thuc=b.gio_ket_thuc,
         ly_do_huy=b.ly_do_huy,
-        hoan_tien=hoan_tien,
+        refund_rate=b.ty_le_hoan_tien or 0.0,
     )
+    return _booking_to_out(b)
+
+
+@router.post("/{booking_id}/refund-info", response_model=BookingOut)
+def submit_refund_info(
+    booking_id: int,
+    payload: RefundInfoSubmit,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Khách hàng (hoặc staff thay mặt) cung cấp STK nhận hoàn tiền SAU khi booking đã bị hủy và thuộc diện hoàn tiền."""
+    b = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not b:
+        raise HTTPException(404, "Không tìm thấy booking")
+    if user.vai_tro == UserRole.KHACH_HANG and b.khach_hang_id != user.id:
+        raise HTTPException(403, "Bạn không có quyền cập nhật đơn này")
+    if b.trang_thai != BookingStatus.HUY or not b.hoan_tien:
+        raise HTTPException(400, "Đơn này không thuộc diện hoàn tiền")
+
+    b.stk_hoan_tien = payload.stk_hoan_tien.strip()
+    b.ten_tk_hoan_tien = payload.ten_tk_hoan_tien.strip()
+    b.ngan_hang_hoan_tien = payload.ngan_hang_hoan_tien.strip()
+    db.commit()
+    db.refresh(b)
     return _booking_to_out(b)
 
 

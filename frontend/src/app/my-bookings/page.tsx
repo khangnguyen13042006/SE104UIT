@@ -104,7 +104,8 @@ export default function MyBookingsPage() {
                 onCancel={() => setCancelTarget(b)}
                 onFeedback={() => setFeedbackTarget(b)}
                 onViewBill={() => setBillTarget(b)}
-                onReschedule={() => setRescheduleTarget(b)} />
+                onReschedule={() => setRescheduleTarget(b)}
+                onRefundUpdated={load} />
             ))}
           </div>
         )}
@@ -207,7 +208,16 @@ function InvoiceModal({ booking, onClose }: { booking: any; onClose: () => void 
   );
 }
 
-function RefundStatusBox({ booking }: { booking: any }) {
+function RefundStatusBox({ booking, onUpdated }: { booking: any; onUpdated: () => void }) {
+  const [showForm, setShowForm] = useState(false);
+  const [stk, setStk] = useState("");
+  const [tenTk, setTenTk] = useState("");
+  const [nganHang, setNganHang] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState("");
+
+  const rate = booking.ty_le_hoan_tien ?? 0.5;
+
   // Determine refund state from invoice + hoan_tien flag
   const invStatus = booking.invoice?.trang_thai;
   let state: "no_refund" | "pending" | "refunded";
@@ -239,6 +249,30 @@ function RefundStatusBox({ booking }: { booking: any }) {
     cls = "bg-muted border-border text-muted-foreground";
   }
 
+  const hasBankInfo = !!booking.stk_hoan_tien;
+
+  async function submitRefundInfo() {
+    if (!stk.trim() || !tenTk.trim() || !nganHang.trim()) {
+      setErr("Vui lòng nhập đủ Số tài khoản, Tên chủ tài khoản và Ngân hàng.");
+      return;
+    }
+    setSubmitting(true);
+    setErr("");
+    try {
+      await apiPost(`/api/bookings/${booking.id}/refund-info`, {
+        stk_hoan_tien: stk,
+        ten_tk_hoan_tien: tenTk,
+        ngan_hang_hoan_tien: nganHang,
+      });
+      setShowForm(false);
+      onUpdated();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className={`p-4 rounded-xl border ${cls}`}>
       <div className="flex items-start gap-3">
@@ -246,15 +280,46 @@ function RefundStatusBox({ booking }: { booking: any }) {
         <div className="flex-1 min-w-0">
           <div className="text-sm font-bold mb-1">{title}</div>
           <div className="text-xs leading-relaxed opacity-90">{detail}</div>
-          {state === "refunded" && booking.invoice && (
+          {(state === "refunded" || state === "pending") && booking.invoice && (
             <div className="text-xs mt-2 font-semibold">
-              Số tiền hoàn: ~{formatVND(parseFloat(booking.invoice.tong_cong) * 0.5)} (50% theo policy)
+              {state === "refunded" ? "Số tiền hoàn" : "Dự kiến hoàn"}: {formatVND(parseFloat(booking.invoice.tong_cong) * rate)} ({Math.round(rate * 100)}%)
             </div>
           )}
-          {state === "pending" && booking.invoice && (
-            <div className="text-xs mt-2 font-semibold">
-              Dự kiến hoàn: {formatVND(parseFloat(booking.invoice.tong_cong) * 0.5)}
-            </div>
+
+          {state === "pending" && (
+            hasBankInfo ? (
+              <div className="mt-3 pt-3 border-t border-current/10 text-xs space-y-1">
+                <div className="font-semibold">Thông tin nhận hoàn tiền đã gửi:</div>
+                <div>STK: <strong>{booking.stk_hoan_tien}</strong> — {booking.ten_tk_hoan_tien} — {booking.ngan_hang_hoan_tien}</div>
+              </div>
+            ) : !showForm ? (
+              <button
+                onClick={() => setShowForm(true)}
+                className="mt-3 px-4 py-2 text-xs font-bold bg-accent text-accent-foreground rounded-lg hover:opacity-90 transition"
+              >
+                Cung cấp thông tin hoàn tiền
+              </button>
+            ) : (
+              <div className="mt-3 space-y-2">
+                <input value={stk} onChange={(e) => setStk(e.target.value)} placeholder="Số tài khoản"
+                  className="w-full px-3 py-2 rounded-lg border border-input bg-background text-xs outline-none focus:border-primary" />
+                <input value={tenTk} onChange={(e) => setTenTk(e.target.value)} placeholder="Tên chủ tài khoản"
+                  className="w-full px-3 py-2 rounded-lg border border-input bg-background text-xs outline-none focus:border-primary" />
+                <input value={nganHang} onChange={(e) => setNganHang(e.target.value)} placeholder="Ngân hàng"
+                  className="w-full px-3 py-2 rounded-lg border border-input bg-background text-xs outline-none focus:border-primary" />
+                {err && <div className="text-xs text-destructive">{err}</div>}
+                <div className="flex gap-2">
+                  <button onClick={() => setShowForm(false)} disabled={submitting}
+                    className="flex-1 py-2 text-xs font-semibold rounded-lg border border-border hover:bg-secondary transition">
+                    Hủy
+                  </button>
+                  <button onClick={submitRefundInfo} disabled={submitting}
+                    className="flex-1 py-2 text-xs font-bold rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition disabled:opacity-50">
+                    {submitting ? "Đang gửi..." : "Gửi thông tin"}
+                  </button>
+                </div>
+              </div>
+            )
           )}
         </div>
       </div>
@@ -262,7 +327,7 @@ function RefundStatusBox({ booking }: { booking: any }) {
   );
 }
 
-function BookingCard({ b, feedback, onCancel, onFeedback, onViewBill, onReschedule }: any) {
+function BookingCard({ b, feedback, onCancel, onFeedback, onViewBill, onReschedule, onRefundUpdated }: any) {
   const st = STATUS_LABEL[b.trang_thai];
   const canCancel = ["CHO_XAC_NHAN", "DA_XAC_NHAN"].includes(b.trang_thai);
   const canReschedule = ["CHO_XAC_NHAN", "DA_XAC_NHAN"].includes(b.trang_thai);
@@ -303,7 +368,7 @@ function BookingCard({ b, feedback, onCancel, onFeedback, onViewBill, onReschedu
               <strong>Lý do hủy:</strong> {b.ly_do_huy}
             </div>
           )}
-          <RefundStatusBox booking={b} />
+          <RefundStatusBox booking={b} onUpdated={onRefundUpdated} />
         </div>
       )}
 
@@ -366,9 +431,6 @@ function BookingCard({ b, feedback, onCancel, onFeedback, onViewBill, onReschedu
 
 function CancelModal({ booking, onClose, onSuccess }: any) {
   const [reason, setReason] = useState("");
-  const [stk, setStk] = useState("");
-  const [tenTk, setTenTk] = useState("");
-  const [nganHang, setNganHang] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const hoursUntil = (new Date(`${booking.ngay_dat}T${booking.gio_bat_dau}`).getTime() - Date.now()) / 3600000;
@@ -379,17 +441,14 @@ function CancelModal({ booking, onClose, onSuccess }: any) {
       setErr("Vui lòng nhập lý do (≥3 ký tự)");
       return;
     }
-    if (willRefund && (!stk.trim() || !tenTk.trim() || !nganHang.trim())) {
-      setErr("Đơn này được hoàn tiền — vui lòng nhập đủ Số tài khoản, Tên chủ tài khoản và Ngân hàng.");
-      return;
-    }
     setLoading(true);
     try {
-      await apiPost(`/api/bookings/${booking.id}/cancel`, {
-        ly_do_huy: reason,
-        ...(willRefund ? { stk_hoan_tien: stk, ten_tk_hoan_tien: tenTk, ngan_hang_hoan_tien: nganHang } : {}),
-      });
-      alert("Đã hủy booking");
+      await apiPost(`/api/bookings/${booking.id}/cancel`, { ly_do_huy: reason });
+      alert(
+        willRefund
+          ? "Đã hủy booking. Vui lòng vào lại đơn này để cung cấp thông tin nhận hoàn tiền."
+          : "Đã hủy booking."
+      );
       onSuccess();
     } catch (e: any) {
       setErr(e.message);
@@ -404,7 +463,7 @@ function CancelModal({ booking, onClose, onSuccess }: any) {
         <AlertCircle size={16} className="shrink-0 mt-0.5" />
         <div>
           {willRefund
-            ? `Còn ${hoursUntil.toFixed(1)}h trước giờ chơi — được hoàn 50% tiền sân.`
+            ? `Còn ${hoursUntil.toFixed(1)}h trước giờ chơi — được hoàn 50% tiền sân. Sau khi hủy, bạn sẽ cung cấp thông tin nhận hoàn tiền ngay tại đơn này.`
             : `Còn ${hoursUntil.toFixed(1)}h trước giờ chơi — KHÔNG được hoàn tiền.`}
         </div>
       </div>
@@ -412,20 +471,6 @@ function CancelModal({ booking, onClose, onSuccess }: any) {
       <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
         className="w-full px-3 py-2.5 rounded-xl border border-input focus:border-primary outline-none resize-none bg-background"
         placeholder="Ví dụ: Đổi lịch họp đột xuất..." />
-
-      {willRefund && (
-        <div className="mt-4 space-y-3">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            Thông tin nhận hoàn tiền
-          </p>
-          <input value={stk} onChange={(e) => setStk(e.target.value)} placeholder="Số tài khoản"
-            className="w-full px-3 py-2.5 rounded-xl border border-input focus:border-primary outline-none bg-background" />
-          <input value={tenTk} onChange={(e) => setTenTk(e.target.value)} placeholder="Tên chủ tài khoản"
-            className="w-full px-3 py-2.5 rounded-xl border border-input focus:border-primary outline-none bg-background" />
-          <input value={nganHang} onChange={(e) => setNganHang(e.target.value)} placeholder="Ngân hàng"
-            className="w-full px-3 py-2.5 rounded-xl border border-input focus:border-primary outline-none bg-background" />
-        </div>
-      )}
 
       {err && <div className="mt-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm">{err}</div>}
       <div className="flex gap-2 mt-5">

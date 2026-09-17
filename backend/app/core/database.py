@@ -72,6 +72,7 @@ def get_db():
 # vào bảng đã tồn tại — nên mỗi khi model có thêm cột, phải khai báo ở đây để tự "vá" schema cũ.
 TABLE_MIGRATIONS: dict[str, dict[str, str]] = {
     "bookings": {
+        "ty_le_hoan_tien": "float",
         "ngay_huy": "datetime",
         "stk_hoan_tien": "varchar(30)",
         "ten_tk_hoan_tien": "varchar(100)",

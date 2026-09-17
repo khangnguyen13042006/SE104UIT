@@ -61,6 +61,7 @@ interface CancelBookingActionPayload {
   ten_san: string;
   ly_do_huy: string;
   hoan_tien: boolean | null;
+  loi_tu_san: boolean | null;
 }
 
 interface CreateFieldActionPayload {
@@ -330,6 +331,7 @@ export default function ChatWidget() {
       await apiPost(`/api/bookings/${payload.booking_id}/cancel`, {
         ly_do_huy: payload.ly_do_huy,
         hoan_tien: payload.hoan_tien,
+        loi_tu_san: payload.loi_tu_san,
       });
       updateActionAt(idx, {
         status: "done",
@@ -482,7 +484,9 @@ export default function ChatWidget() {
                   {m.action?.type === "cancel_booking" && (
                     <ActionCard
                       icon={<Ban className="w-3.5 h-3.5" />}
-                      description={`Hủy đơn ${m.action.payload.ma_dat_san} (${m.action.payload.ten_san})? Lý do: ${m.action.payload.ly_do_huy}`}
+                      description={`Hủy đơn ${m.action.payload.ma_dat_san} (${m.action.payload.ten_san})?${
+                        m.action.payload.loi_tu_san ? " [Lỗi từ sân - hoàn 100%]" : ""
+                      } Lý do: ${m.action.payload.ly_do_huy}`}
                       buttonLabel="Hủy đơn"
                       status={m.action.status}
                       resultText={m.action.resultText}

@@ -129,9 +129,13 @@ class BookingCreate(BaseModel):
 class BookingCancel(BaseModel):
     ly_do_huy: str = Field(..., min_length=3)
     hoan_tien: Optional[bool] = None  # CHỈ admin/staff được set. Khách hàng để None → server tự tính theo policy 24h.
-    stk_hoan_tien: Optional[str] = None
-    ten_tk_hoan_tien: Optional[str] = None
-    ngan_hang_hoan_tien: Optional[str] = None
+    loi_tu_san: Optional[bool] = None  # CHỈ admin/quản lý: true = lỗi/sự cố từ sân → hoàn 100% (ghi đè hoan_tien)
+
+
+class RefundInfoSubmit(BaseModel):
+    stk_hoan_tien: str = Field(..., min_length=3)
+    ten_tk_hoan_tien: str = Field(..., min_length=2)
+    ngan_hang_hoan_tien: str = Field(..., min_length=2)
 
 
 class BookingReschedule(BaseModel):
@@ -190,6 +194,7 @@ class BookingOut(BaseModel):
     trang_thai: BookingStatus
     ly_do_huy: Optional[str]
     hoan_tien: bool = False
+    ty_le_hoan_tien: Optional[float] = None
     ngay_huy: Optional[datetime] = None
     stk_hoan_tien: Optional[str] = None
     ten_tk_hoan_tien: Optional[str] = None

@@ -88,13 +88,16 @@ def send_booking_cancelled_email(
     gio_bat_dau: time,
     gio_ket_thuc: time,
     ly_do_huy: Optional[str],
-    hoan_tien: bool,
+    refund_rate: float,
 ) -> None:
-    refund_text = (
-        "Bạn sẽ được hoàn 50% tiền sân trong 1-3 ngày làm việc."
-        if hoan_tien
-        else "Đơn không thuộc diện hoàn tiền theo chính sách hủy sân."
-    )
+    if refund_rate > 0:
+        refund_text = (
+            f"Bạn sẽ được hoàn <strong>{int(refund_rate * 100)}%</strong> tiền sân. "
+            f'Vui lòng đăng nhập và vào mục "Lịch đặt của tôi" trên website, bấm nút '
+            f'"Thông tin hoàn tiền" ở đơn này để cung cấp Số tài khoản, Tên chủ tài khoản và Ngân hàng nhận tiền.'
+        )
+    else:
+        refund_text = "Đơn không thuộc diện hoàn tiền theo chính sách hủy sân."
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color:#1a1a1a;">
       <h2 style="color:#ef4444;">Đơn đặt sân đã được hủy</h2>

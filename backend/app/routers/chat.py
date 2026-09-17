@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta, time
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from google import genai
 from google.genai import types
@@ -13,7 +14,7 @@ from app.core.security import get_current_user_optional, require_roles
 from app.core.config import FieldStatus, ServiceStatus, BookingStatus, UserRole, MEMBERSHIP_NAME, FieldType
 from app.models import Field, Booking, Service, User, Feedback
 from app.utils.helpers import (
-    has_booking_conflict, get_active_membership, get_discount_rate, get_feedback_snapshot,
+    has_booking_conflict, get_active_membership, get_discount_rate,
     calculate_lifetime_spend, calculate_tier_from_spend,
 )
 
@@ -157,14 +158,24 @@ def validate_and_sanitize_booking_action(
 def build_shared_context(db: Session, today: date) -> dict:
     """Dữ liệu dùng chung cho cả chat khách hàng và chat nội bộ: sân (kèm đánh giá), dịch vụ, lịch bận 3 ngày tới."""
     fields = db.query(Field).filter(Field.trang_thai == FieldStatus.HOAT_DONG).all()
+
+    # 1 query gộp cho đánh giá của TẤT CẢ sân, thay vì 1 query riêng mỗi sân (N+1) — giảm độ trễ chatbot.
+    rating_rows = (
+        db.query(
+            Booking.san_id,
+            func.count(Feedback.id).label("cnt"),
+            func.avg(Feedback.danh_gia_tong).label("avg_rating"),
+        )
+        .join(Booking, Feedback.booking_id == Booking.id)
+        .group_by(Booking.san_id)
+        .all()
+    )
+    rating_map = {r.san_id: (r.cnt, float(r.avg_rating or 0)) for r in rating_rows}
+
     fields_data = []
     for f in fields:
-        snap = get_feedback_snapshot(db, san_id=f.id)
-        rating_text = (
-            f"Đánh giá TB: {snap['trung_binh']}/5 ({snap['tong_so']} lượt)"
-            if snap["tong_so"] > 0
-            else "Chưa có đánh giá"
-        )
+        cnt, avg_rating = rating_map.get(f.id, (0, 0.0))
+        rating_text = f"Đánh giá TB: {round(avg_rating, 2)}/5 ({cnt} lượt)" if cnt > 0 else "Chưa có đánh giá"
         fields_data.append(
             f"- Sân ID {f.id}: {f.ten_san} | Loại: {f.loai_san.value} ({f.suc_chua} người) | "
             f"Giá thường: {int(f.gia_tieu_chuan):,}đ/h | Cao điểm: {int(f.gia_cao_diem):,}đ/h | "
@@ -317,12 +328,16 @@ def validate_cancel_booking_action(db: Session, action: Optional[dict]) -> Optio
     hoan_tien_raw = action.get("hoan_tien")
     hoan_tien = hoan_tien_raw if isinstance(hoan_tien_raw, bool) else None
 
+    loi_tu_san_raw = action.get("loi_tu_san")
+    loi_tu_san = bool(loi_tu_san_raw) if isinstance(loi_tu_san_raw, bool) else None
+
     return {
         "booking_id": booking.id,
         "ma_dat_san": booking.ma_dat_san,
         "ten_san": booking.san.ten_san if booking.san else "",
         "ly_do_huy": ly_do_huy,
         "hoan_tien": hoan_tien,
+        "loi_tu_san": loi_tu_san,
     }
 
 
@@ -534,28 +549,35 @@ Luôn trả về đúng 1 JSON object gồm 2 khóa:
    - Nếu khách tra cứu lịch cá nhân, hỏi STK thanh toán, hỏi chính sách hủy hoặc giờ đó đã kín lịch: gán "booking_action": null.
 """
 
+        # (model, hỗ trợ thinking_config?) — model "lite" không nhận thinking_config (400 INVALID_ARGUMENT nếu truyền vào).
+        # Ưu tiên model lite trước vì nhanh hơn nhiều (~1s so với ~5s) cho tác vụ JSON đơn giản này.
+        # gemini-2.5-flash/2.0-flash/1.5-flash đã bị Google ngừng hỗ trợ (404) — giữ lại các bản 3.x/latest còn hoạt động.
         candidate_models = [
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-3.6-flash",
-            "gemini-3.5-flash",
-            "gemini-3.5-flash-lite",
+            ("gemini-3.5-flash-lite", False),
+            ("gemini-flash-lite-latest", False),
+            ("gemini-3.5-flash", True),
+            ("gemini-3.6-flash", True),
         ]
 
         full_prompt = f"{history_context}Khách hàng vừa nhắn: \"{req.message}\""
 
         last_error = None
-        for model_name in candidate_models:
+        for model_name, supports_thinking in candidate_models:
             try:
+                config_kwargs = dict(
+                    system_instruction=system_instruction,
+                    temperature=0.2,
+                    response_mime_type="application/json",
+                    http_options=types.HttpOptions(timeout=10000),  # ms — API yêu cầu tối thiểu 10s
+                )
+                if supports_thinking:
+                    # Tắt "thinking" mở rộng: đây là tác vụ trả lời/JSON đơn giản, không cần suy luận nhiều bước —
+                    # thinking mặc định (đặc biệt ở model 2.5) là nguyên nhân chính khiến phản hồi chậm ~10s.
+                    config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
                 response = client.models.generate_content(
                     model=model_name,
                     contents=full_prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        temperature=0.2,
-                        response_mime_type="application/json",
-                    ),
+                    config=types.GenerateContentConfig(**config_kwargs),
                 )
                 if response and response.text:
                     raw = response.text.strip()
@@ -683,8 +705,11 @@ Luôn trả về đúng 1 JSON object gồm 7 khóa: "reply", "add_service_actio
    Nếu không đủ thông tin, gán null.
 4. "confirm_booking_action": CHỈ điền khi nhân viên muốn XÁC NHẬN một booking đang ở trạng thái "Chờ xác nhận" (ví dụ "xác nhận đơn BK12345678", "duyệt đơn BK..."):
    Tạo object gồm: "ma_dat_san" (str). Nếu thiếu mã đơn, gán null.
-4b. "cancel_booking_action": CHỈ điền khi nhân viên muốn HỦY một booking đang "Chờ xác nhận" hoặc "Đã xác nhận" (ví dụ "hủy đơn BK12345678 vì khách báo bận"):
-   Tạo object gồm: "ma_dat_san" (str), "ly_do_huy" (str, tóm tắt lý do nếu nhân viên có nêu, để trống nếu không rõ), "hoan_tien" (true/false CHỈ khi nhân viên nói rõ có/không hoàn tiền, ngược lại để null cho hệ thống tự áp policy 24h).
+4b. "cancel_booking_action": CHỈ điền khi nhân viên muốn HỦY một booking đang "Chờ xác nhận" hoặc "Đã xác nhận" (ví dụ "hủy đơn BK12345678 vì khách báo bận", "hủy đơn BK... do sân bị lỗi đèn"):
+   Tạo object gồm: "ma_dat_san" (str), "ly_do_huy" (str, tóm tắt lý do nếu nhân viên có nêu, để trống nếu không rõ),
+   "loi_tu_san" (true CHỈ khi lý do là lỗi/sự cố/hỏng hóc từ phía sân → hoàn 100%, ngược lại null),
+   "hoan_tien" (true/false CHỈ khi nhân viên nói rõ có/không hoàn tiền theo yêu cầu khách (hoàn 50%), ngược lại null cho hệ thống tự áp policy 24h). KHÔNG điền cả "loi_tu_san" và "hoan_tien" cùng lúc — nếu là lỗi từ sân thì chỉ điền "loi_tu_san": true.
+   Không thu thập thông tin STK ở đây — khách sẽ tự cung cấp sau tại "Lịch đặt của tôi".
    Nếu thiếu mã đơn, gán null.
 5. "create_field_action": CHỈ điền khi nhân viên muốn TẠO MỚI một sân bóng (ví dụ "thêm sân mới tên Sân 6, loại 7 người, sức chứa 14, giá thường 200000, giá cao điểm 250000"):
    Tạo object gồm: "ten_san" (str), "loai_san" ("SAN_5"|"SAN_7"|"SAN_11"), "suc_chua" (int), "gia_tieu_chuan" (number), "gia_cao_diem" (number), "mo_ta" (str, có thể rỗng).
@@ -700,25 +725,27 @@ Mỗi phản hồi chỉ được điền khác null TỐI ĐA MỘT trong 6 kh�
         full_prompt = f"{history_context}Nhân viên vừa nhắn: \"{req.message}\""
 
         candidate_models = [
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-3.6-flash",
-            "gemini-3.5-flash",
-            "gemini-3.5-flash-lite",
+            ("gemini-3.5-flash-lite", False),
+            ("gemini-flash-lite-latest", False),
+            ("gemini-3.5-flash", True),
+            ("gemini-3.6-flash", True),
         ]
 
         last_error = None
-        for model_name in candidate_models:
+        for model_name, supports_thinking in candidate_models:
             try:
+                config_kwargs = dict(
+                    system_instruction=system_instruction,
+                    temperature=0.2,
+                    response_mime_type="application/json",
+                    http_options=types.HttpOptions(timeout=10000),  # ms — API yêu cầu tối thiểu 10s
+                )
+                if supports_thinking:
+                    config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
                 response = client.models.generate_content(
                     model=model_name,
                     contents=full_prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        temperature=0.2,
-                        response_mime_type="application/json",
-                    ),
+                    config=types.GenerateContentConfig(**config_kwargs),
                 )
                 if response and response.text:
                     raw = response.text.strip()
