@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,12 +21,22 @@ os.makedirs("uploads/receipts", exist_ok=True)
 logger = logging.getLogger("uvicorn.error")
 
 def init_database():
-    try:
-        Base.metadata.create_all(bind=engine)
-        migrate_schema()
-        logger.info("✅ Database tables initialized")
-    except Exception as e:
-        logger.error(f"⚠️  Database init failed: {e}")
+    """Tạo bảng + tự vá schema. Có retry vì Azure SQL (đặc biệt gói Serverless) có thể tạm thời
+    'ngủ'/đang khởi động lại đúng lúc app start, khiến lần kết nối đầu tiên thất bại thoáng qua
+    (lỗi 40613 'database is not currently available'). Không retry sẽ khiến app khởi động thành công
+    nhưng bảng bookings mãi thiếu cột mới cho tới lần deploy kế tiếp."""
+    delays = [2, 5, 10]  # giây, tăng dần giữa các lần thử
+    for attempt in range(1, len(delays) + 2):
+        try:
+            Base.metadata.create_all(bind=engine)
+            migrate_schema()
+            logger.info("✅ Database tables initialized")
+            return
+        except Exception as e:
+            logger.error(f"⚠️  Database init failed (lần {attempt}/{len(delays) + 1}): {e}")
+            if attempt <= len(delays):
+                time.sleep(delays[attempt - 1])
+    logger.error("❌ Database init thất bại sau nhiều lần thử — app vẫn khởi động nhưng schema có thể chưa đầy đủ.")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
