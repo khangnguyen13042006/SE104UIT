@@ -1,8 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+import os
+import json
+import re
+import unicodedata
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import date, time, datetime, timedelta
 from decimal import Decimal
+from google import genai
+from google.genai import types
+
 from app.core.database import get_db
 from app.core.security import get_current_user, get_current_user_optional, require_roles
 from app.core.config import (
@@ -16,8 +24,13 @@ from app.utils.helpers import (
     has_booking_conflict, get_active_membership, get_discount_rate,
     is_valid_booking_time
 )
+from app.utils.mailer import send_booking_success_email
 
 router = APIRouter(prefix="/api/bookings", tags=["Bookings"])
+
+gemini_client = genai.Client(
+    api_key=os.environ.get("GEMINI_API_KEY"),
+)
 
 
 def _booking_to_out(b: Booking) -> dict:
@@ -87,9 +100,12 @@ def create_booking(
         raise HTTPException(400, "Sân hiện không hoạt động")
 
     # 2) Validate date/time
-    if payload.ngay_dat == date.today():
-        now_vn = datetime.utcnow() + timedelta(hours=7)
-        if payload.gio_bat_dau <= now_vn.time():
+    now_vn_dt = datetime.utcnow() + timedelta(hours=7)
+    today_vn = now_vn_dt.date()
+    if payload.ngay_dat < today_vn:
+        raise HTTPException(400, "Không thể đặt ngày trong quá khứ")
+    if payload.ngay_dat == today_vn:
+        if payload.gio_bat_dau <= now_vn_dt.time():
             raise HTTPException(400, "Khung giờ này đã trôi qua so với thời gian thực.")
     ok, msg = is_valid_booking_time(payload.gio_bat_dau, payload.gio_ket_thuc)
     if not ok:
@@ -180,15 +196,23 @@ def create_booking(
         svc.ton_kho -= item.so_luong
         tien_dich_vu += thanh_tien
 
-    # 8) Tính giảm giá theo tier (LIFETIME SPEND, không cần đăng ký thẻ)
+    # 8) Tính giảm giá kết hợp (Hạng chi tiêu tích lũy + Thẻ hội viên active)
     giam_gia = Decimal(0)
     if khach_hang_id:
         from app.utils.helpers import calculate_lifetime_spend, calculate_tier_from_spend
         spend = calculate_lifetime_spend(db, khach_hang_id)
-        tier = calculate_tier_from_spend(spend)
-        rate = get_discount_rate(tier)
-        if rate > 0:
-            giam_gia = (tien_san * Decimal(str(rate))).quantize(Decimal("1"))
+        tier_spend = calculate_tier_from_spend(spend)
+        rate_spend = get_discount_rate(tier_spend)
+
+        active_mem = get_active_membership(db, khach_hang_id)
+        rate_mem = 0.0
+        if active_mem:
+            tier_mem = active_mem.loai_the.value if hasattr(active_mem.loai_the, "value") else str(active_mem.loai_the)
+            rate_mem = get_discount_rate(tier_mem)
+
+        best_rate = max(rate_spend, rate_mem)
+        if best_rate > 0:
+            giam_gia = (tien_san * Decimal(str(best_rate))).quantize(Decimal("1"))
 
     tong_cong = tien_san + tien_dich_vu - giam_gia
 
@@ -206,6 +230,17 @@ def create_booking(
     db.add(invoice)
     db.commit()
     db.refresh(booking)
+
+    send_booking_success_email(
+        to_email=current_user.email,
+        ma_dat_san=booking.ma_dat_san,
+        ten_san=field.ten_san,
+        ngay_dat=booking.ngay_dat,
+        gio_bat_dau=booking.gio_bat_dau,
+        gio_ket_thuc=booking.gio_ket_thuc,
+        tong_cong=invoice.tong_cong,
+        trang_thai_thanh_toan=invoice.trang_thai.value,
+    )
     return _booking_to_out(booking)
 
 
@@ -436,8 +471,16 @@ def create_guest_booking(payload: GuestBookingCreate, db: Session = Depends(get_
     if field.trang_thai != FieldStatus.HOAT_DONG:
         raise HTTPException(400, "Sân hiện không hoạt động")
 
-    if payload.ngay_dat < date.today():
+    # Chuẩn hóa thời gian theo giờ Việt Nam UTC+7
+    now_vn_dt = datetime.utcnow() + timedelta(hours=7)
+    today_vn = now_vn_dt.date()
+
+    if payload.ngay_dat < today_vn:
         raise HTTPException(400, "Không thể đặt ngày trong quá khứ")
+    if payload.ngay_dat == today_vn:
+        if payload.gio_bat_dau <= now_vn_dt.time():
+            raise HTTPException(400, "Khung giờ này đã trôi qua so với thời gian thực.")
+
     ok, msg = is_valid_booking_time(payload.gio_bat_dau, payload.gio_ket_thuc)
     if not ok:
         raise HTTPException(400, msg)
@@ -496,14 +539,23 @@ def create_guest_booking(payload: GuestBookingCreate, db: Session = Depends(get_
         svc.ton_kho -= qty
         tien_dich_vu += thanh_tien
 
+    # Tính giảm giá kết hợp (Hạng chi tiêu tích lũy + Thẻ hội viên active)
     giam_gia = Decimal(0)
     if khach_hang_id:
         from app.utils.helpers import calculate_lifetime_spend, calculate_tier_from_spend
         spend = calculate_lifetime_spend(db, khach_hang_id)
-        tier = calculate_tier_from_spend(spend)
-        rate = get_discount_rate(tier)
-        if rate > 0:
-            giam_gia = (tien_san * Decimal(str(rate))).quantize(Decimal("1"))
+        tier_spend = calculate_tier_from_spend(spend)
+        rate_spend = get_discount_rate(tier_spend)
+
+        active_mem = get_active_membership(db, khach_hang_id)
+        rate_mem = 0.0
+        if active_mem:
+            tier_mem = active_mem.loai_the.value if hasattr(active_mem.loai_the, "value") else str(active_mem.loai_the)
+            rate_mem = get_discount_rate(tier_mem)
+
+        best_rate = max(rate_spend, rate_mem)
+        if best_rate > 0:
+            giam_gia = (tien_san * Decimal(str(best_rate))).quantize(Decimal("1"))
 
     tong_cong = tien_san + tien_dich_vu - giam_gia
 
@@ -517,6 +569,18 @@ def create_guest_booking(payload: GuestBookingCreate, db: Session = Depends(get_
     ))
     db.commit()
     db.refresh(booking)
+
+    recipient_email = existing.email if khach_hang_id and existing else email_kvl
+    send_booking_success_email(
+        to_email=recipient_email,
+        ma_dat_san=booking.ma_dat_san,
+        ten_san=field.ten_san,
+        ngay_dat=booking.ngay_dat,
+        gio_bat_dau=booking.gio_bat_dau,
+        gio_ket_thuc=booking.gio_ket_thuc,
+        tong_cong=tong_cong,
+        trang_thai_thanh_toan=PaymentStatus.CHUA_THANH_TOAN.value,
+    )
     return _booking_to_out(booking)
 
 
@@ -639,6 +703,257 @@ def claim_paid(booking_id: int, db: Session = Depends(get_db)):
         b.ghi_chu = (b.ghi_chu or "") + "\n" + note if b.ghi_chu else note
     db.commit()
     return {"ok": True, "message": "Đã ghi nhận, vui lòng đợi nhân viên xác nhận"}
+
+
+def _normalize_text(text: str) -> str:
+    """Loại bỏ dấu tiếng Việt và ký tự đặc biệt để so sánh chính xác."""
+    if not text:
+        return ""
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    text = text.replace("đ", "d").replace("Đ", "D")
+    text = re.sub(r"[^a-zA-Z0-9]", "", text)
+    return text.upper()
+
+
+@router.post("/{booking_id}/verify-receipt")
+async def verify_receipt(
+    booking_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Tự động xác thực hóa đơn chuyển khoản bằng AI Vision (Gemini):
+    - Kiểm tra đúng Tên người thụ hưởng (SAN BONG UIT / STK 0123456789)
+    - Kiểm tra đúng Số tiền thanh toán (khớp với tổng tiền đơn đặt sân)
+    - Kiểm tra đúng Nội dung booking (chứa mã đặt sân BK...)
+    - Nếu đúng cả 3, tự động chuyển đơn sang trạng thái ĐÃ XÁC NHẬN (DA_XAC_NHAN).
+    """
+    b = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not b:
+        raise HTTPException(404, "Không tìm thấy đơn đặt sân")
+
+    if b.trang_thai == BookingStatus.DA_XAC_NHAN:
+        return {
+            "success": True,
+            "already_confirmed": True,
+            "message": "Đơn đặt sân này đã được xác nhận trước đó.",
+            "booking": _booking_to_out(b),
+        }
+
+    if b.trang_thai in (BookingStatus.HUY, BookingStatus.HOAN_THANH):
+        raise HTTPException(400, f"Đơn đặt sân đang ở trạng thái '{b.trang_thai}', không thể xác thực biên lai.")
+
+    # 1. Đọc và kiểm tra file ảnh
+    contents = await file.read()
+    if not contents or len(contents) < 50:
+        raise HTTPException(400, "Ảnh tải lên không hợp lệ hoặc không có dữ liệu.")
+    if len(contents) > 15 * 1024 * 1024:
+        raise HTTPException(400, "Dung lượng ảnh vượt quá 15MB.")
+
+    content_type = file.content_type or "image/jpeg"
+    if not content_type.startswith("image/"):
+        content_type = "image/jpeg"
+
+    # Lưu ảnh vào backend/uploads/receipts/
+    upload_dir = os.path.join("uploads", "receipts")
+    os.makedirs(upload_dir, exist_ok=True)
+    raw_ext = file.filename.split(".")[-1].lower() if (file.filename and "." in file.filename) else "jpg"
+    ext = raw_ext if raw_ext in ("jpg", "jpeg", "png", "webp", "heic") else "jpg"
+    filename = f"receipt_{b.id}_{int(datetime.now().timestamp())}.{ext}"
+    filepath = os.path.join(upload_dir, filename)
+    with open(filepath, "wb") as f:
+        f.write(contents)
+    receipt_web_url = f"/uploads/receipts/{filename}"
+
+    # 2. Tính toán giá trị kỳ vọng của đơn đặt sân
+    expected_code = b.ma_dat_san
+    if b.invoice and b.invoice.tong_cong:
+        expected_amount = float(b.invoice.tong_cong)
+    else:
+        svc_total = sum(float(bs.thanh_tien) for bs in b.booking_services)
+        expected_amount = float(b.tien_san) + svc_total
+
+    expected_acc = "0123456789"
+
+    # 3. Phân tích ảnh qua Gemini Vision
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(500, "Hệ thống chưa thiết lập GEMINI_API_KEY để phân tích ảnh.")
+
+    prompt = f"""Bạn là trợ lý AI chuyên đối soát hóa đơn chuyển khoản ngân hàng Việt Nam.
+Hãy phân tích hình ảnh biên lai / ảnh chụp màn hình giao dịch chuyển tiền này và trích xuất thông tin giao dịch thành JSON.
+YÊU CẦU:
+- Trả về DUY NHẤT một chuỗi JSON hợp lệ, KHÔNG bọc mã markdown, KHÔNG viết bất kỳ lời dẫn hay giải thích nào.
+- Hãy đọc kỹ: Tên người thụ hưởng/người nhận tiền, Số tài khoản người nhận, Số tiền chuyển (dạng số nguyên integer không dấu chấm phẩy), Nội dung chuyển khoản/lời nhắn/ghi chú, và Trạng thái giao dịch.
+
+Cấu trúc JSON:
+{{
+  "is_bank_receipt": true,
+  "is_success": true,
+  "bank_name": "Tên ngân hàng chuyển hoặc nhận",
+  "recipient_name": "Tên người nhận thụ hưởng",
+  "recipient_account": "Số tài khoản nhận tiền nếu có",
+  "transferred_amount": 150000,
+  "transfer_content": "Nội dung chuyển khoản hoặc lời nhắn",
+  "transaction_id": "Mã giao dịch hoặc số tham chiếu ngân hàng",
+  "all_text_detected": "Toàn bộ các đoạn chữ/số quan trọng đọc được trên ảnh"
+}}
+"""
+
+    candidate_models = [
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+    ]
+
+    img_part = types.Part.from_bytes(data=contents, mime_type=content_type)
+    extracted_data = None
+    ai_error = None
+
+    for model_name in candidate_models:
+        try:
+            response = gemini_client.models.generate_content(
+                model=model_name,
+                contents=[img_part, prompt],
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    response_mime_type="application/json",
+                ),
+            )
+            if response and response.text:
+                raw = response.text.strip()
+                if raw.startswith("```json"):
+                    raw = raw[7:]
+                if raw.startswith("```"):
+                    raw = raw[3:]
+                if raw.endswith("```"):
+                    raw = raw[:-3]
+                extracted_data = json.loads(raw.strip())
+                if extracted_data:
+                    break
+        except Exception as e:
+            ai_error = e
+            continue
+
+    if not extracted_data:
+        return {
+            "success": False,
+            "message": "Không thể nhận diện nội dung từ ảnh tải lên. Vui lòng đảm bảo ảnh chụp rõ nét hóa đơn chuyển khoản ngân hàng.",
+            "error_detail": str(ai_error) if ai_error else "AI không phản hồi",
+            "receipt_url": receipt_web_url,
+        }
+
+    # 4. Hậu kiểm 3 tiêu chí cốt lõi
+    is_receipt = bool(extracted_data.get("is_bank_receipt", False))
+    is_success = bool(extracted_data.get("is_success", False))
+    recip_name = str(extracted_data.get("recipient_name") or "")
+    recip_acc = str(extracted_data.get("recipient_account") or "")
+    transferred_amt = float(extracted_data.get("transferred_amount") or 0)
+    trans_content = str(extracted_data.get("transfer_content") or "")
+    all_text = str(extracted_data.get("all_text_detected") or "")
+    trans_id = str(extracted_data.get("transaction_id") or "")
+
+    # Chuẩn hóa xâu ký tự
+    norm_recip_name = _normalize_text(recip_name)
+    norm_all_text = _normalize_text(all_text)
+    norm_content = _normalize_text(trans_content)
+    norm_expected_code = _normalize_text(expected_code)
+    code_digits = re.sub(r"\D", "", expected_code)
+
+    # 4.1 Tiêu chí 1: Đúng tên thụ hưởng (SAN BONG UIT) hoặc đúng STK (0123456789)
+    name_ok = (
+        ("SANBONGUIT" in norm_recip_name)
+        or ("SANBONG" in norm_recip_name)
+        or ("UIT" in norm_recip_name and "SAN" in norm_recip_name)
+        or ("SANBONGUIT" in norm_all_text)
+        or (expected_acc in recip_acc)
+        or (expected_acc in norm_all_text)
+    )
+
+    # 4.2 Tiêu chí 2: Đúng số tiền (Cho phép chuyển lớn hơn hoặc bằng, chênh lệch tối đa 1.000đ)
+    amount_ok = (transferred_amt >= (expected_amount - 1000))
+
+    # 4.3 Tiêu chí 3: Đúng nội dung booking (Chứa mã đặt sân hoặc dãy số mã đặt sân)
+    content_ok = (
+        (norm_expected_code in norm_content)
+        or (norm_expected_code in norm_all_text)
+        or (norm_expected_code in _normalize_text(trans_id))
+        or (len(code_digits) >= 5 and code_digits in norm_content)
+        or (len(code_digits) >= 5 and code_digits in norm_all_text)
+    )
+
+    # Kiểm tra thêm nếu nội dung chuyển khoản có kèm số điện thoại của khách
+    customer_phone = b.sdt_khach_vang_lai or (b.khach_hang.sdt if b.khach_hang else "")
+    if not content_ok and customer_phone and len(customer_phone) >= 9:
+        if customer_phone in trans_content or customer_phone in all_text:
+            content_ok = True
+
+    checks = {
+        "is_bank_receipt": is_receipt,
+        "is_success": is_success,
+        "name_ok": name_ok,
+        "amount_ok": amount_ok,
+        "content_ok": content_ok,
+    }
+
+    details = {
+        "recipient_name": recip_name,
+        "recipient_account": recip_acc,
+        "transferred_amount": transferred_amt,
+        "expected_amount": expected_amount,
+        "transfer_content": trans_content,
+        "expected_code": expected_code,
+        "bank_name": extracted_data.get("bank_name", ""),
+    }
+
+    if is_receipt and is_success and name_ok and amount_ok and content_ok:
+        # === TỰ ĐỘNG CHUYỂN TRẠNG THÁI SANG ĐÃ XÁC NHẬN ===
+        b.trang_thai = BookingStatus.DA_XAC_NHAN
+        if b.invoice:
+            b.invoice.trang_thai = PaymentStatus.DA_THANH_TOAN
+            b.invoice.hinh_thuc_thanh_toan = PaymentMethod.CHUYEN_KHOAN
+
+        audit = (
+            f"[AI XÁC THỰC BILL TỰ ĐỘNG THÀNH CÔNG] "
+            f"Số tiền: {transferred_amt:,.0f}đ (Đủ {expected_amount:,.0f}đ) | "
+            f"Người nhận: '{recip_name}' | "
+            f"ND: '{trans_content}' | "
+            f"Ảnh: {receipt_web_url} lúc {datetime.now().strftime('%H:%M %d/%m/%Y')}"
+        )
+        b.ghi_chu = (b.ghi_chu + "\n" + audit) if b.ghi_chu else audit
+        db.commit()
+        db.refresh(b)
+
+        return {
+            "success": True,
+            "message": "Đối soát thành công! Đơn đặt sân đã được tự động kích hoạt.",
+            "booking": _booking_to_out(b),
+            "checks": checks,
+            "details": details,
+            "receipt_url": receipt_web_url,
+        }
+    else:
+        # Tổng hợp chi tiết lý do chưa khớp
+        error_reasons = []
+        if not is_receipt:
+            error_reasons.append("Ảnh tải lên không phải biên lai chuyển khoản ngân hàng hợp lệ.")
+        elif not is_success:
+            error_reasons.append("Hóa đơn chưa ở trạng thái thành công.")
+        if not name_ok:
+            error_reasons.append(f"Tên người nhận ({recip_name or 'Không rõ'}) không khớp chủ tài khoản 'SAN BONG UIT'.")
+        if not amount_ok:
+            error_reasons.append(f"Số tiền chuyển ({transferred_amt:,.0f}đ) chưa đủ số tiền cần thanh toán ({expected_amount:,.0f}đ).")
+        if not content_ok:
+            error_reasons.append(f"Nội dung chuyển khoản không tìm thấy mã đặt sân '{expected_code}'.")
+
+        return {
+            "success": False,
+            "message": " ".join(error_reasons) if error_reasons else "Thông tin trên hóa đơn không khớp.",
+            "checks": checks,
+            "details": details,
+            "receipt_url": receipt_web_url,
+        }
 
 
 

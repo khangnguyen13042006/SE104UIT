@@ -27,6 +27,10 @@ services:
         value: 3.11.9
       - key: ALLOWED_ORIGINS
         value: https://se104uit.vercel.app
-      # DATABASE_URL phải set thủ công trong Render dashboard (chứa secret)
+      # Các biến sau chứa secret, phải set thủ công trong Render dashboard
       - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
         sync: false

@@ -30,6 +30,15 @@ class UserLogin(BaseModel):
     mat_khau: str
 
 
+class SendOtpRequest(BaseModel):
+    email: EmailStr
+
+
+class VerifyOtpRequest(BaseModel):
+    email: EmailStr
+    otp: str = Field(..., min_length=6, max_length=6)
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"

@@ -26,6 +26,12 @@ dist/
 .env.local
 .env.*.local
 
+# Uploads (ảnh biên lai chuyển khoản của khách - dữ liệu nhạy cảm, không commit)
+backend/uploads/
+
+# TypeScript build cache
+*.tsbuildinfo
+
 # OS
 .DS_Store
 Thumbs.db

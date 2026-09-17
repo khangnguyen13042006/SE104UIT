@@ -3,7 +3,7 @@ import { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import { apiGet, formatDateTime } from "@/lib/api";
-import { Star, Loader2, MessageSquare, ArrowUpDown } from "lucide-react";
+import { Star, Loader2, MessageSquare, ArrowUpDown, Sparkles } from "lucide-react";
 
 type SortOption = "newest" | "oldest" | "highest" | "lowest";
 
@@ -12,6 +12,8 @@ export default function FeedbackPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("");
   const [sort, setSort] = useState<SortOption>("newest");
+  const [summary, setSummary] = useState<{ tong_so: number; trung_binh: number; hai_long_pct: number; ai_summary: string | null } | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
 
   async function load() {
     setLoading(true);
@@ -26,7 +28,20 @@ export default function FeedbackPage() {
     }
   }
 
-  useEffect(() => { load(); }, [filter]);
+  async function loadSummary() {
+    setSummaryLoading(true);
+    try {
+      const params = filter ? `?min_star=${filter}&max_star=${filter}` : "";
+      const r = await apiGet(`/api/feedbacks/summary${params}`);
+      setSummary(r);
+    } catch (e: any) {
+      setSummary(null);
+    } finally {
+      setSummaryLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); loadSummary(); }, [filter]);
 
   // Client-side sort: Tự động sắp xếp lại danh sách
   const sortedList = useMemo(() => {
@@ -114,6 +129,28 @@ export default function FeedbackPage() {
             </div>
             
           </div>
+        </motion.div>
+
+        {/* Tóm tắt AI */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+          className="bg-card rounded-3xl border border-border p-5 mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles className="w-4 h-4 text-primary" />
+            <span className="text-sm font-bold text-foreground">Tóm tắt AI</span>
+          </div>
+          {summaryLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" /> Đang tổng hợp đánh giá...
+            </div>
+          ) : summary && summary.ai_summary ? (
+            <p className="text-sm text-foreground leading-relaxed">{summary.ai_summary}</p>
+          ) : summary && summary.tong_so > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {summary.tong_so} lượt đánh giá, {summary.hai_long_pct}% khách hài lòng (từ 4 sao trở lên).
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">Chưa đủ dữ liệu để tổng hợp.</p>
+          )}
         </motion.div>
 
         {loading ? (

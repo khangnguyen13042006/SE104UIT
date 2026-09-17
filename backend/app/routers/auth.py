@@ -1,3 +1,5 @@
+import random
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -5,10 +7,13 @@ from app.core.security import (
     hash_password, verify_password, create_access_token, get_current_user
 )
 from app.core.config import UserRole, UserStatus
-from app.models import User
-from app.schemas import UserRegister, UserLogin, Token, UserOut
+from app.models import User, EmailOtp
+from app.schemas import UserRegister, UserLogin, Token, UserOut, SendOtpRequest, VerifyOtpRequest
+from app.utils.mailer import send_otp_email
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
+
+OTP_EXPIRE_MINUTES = 5
 
 
 @router.post("/register", response_model=Token)
@@ -57,3 +62,43 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
     return user
+
+
+@router.post("/send-otp")
+def send_otp(payload: SendOtpRequest, db: Session = Depends(get_db)):
+    """Sinh mã OTP 6 số, lưu vào bảng email_otps (hạn 5 phút) và gửi qua email."""
+    email = payload.email.lower()
+    otp_code = "".join(random.choices("0123456789", k=6))
+    record = EmailOtp(
+        email=email,
+        ma_otp=otp_code,
+        het_han=datetime.utcnow() + timedelta(minutes=OTP_EXPIRE_MINUTES),
+    )
+    db.add(record)
+    db.commit()
+
+    send_otp_email(email, otp_code)
+    return {"ok": True, "message": f"Mã xác thực đã được gửi tới {email}"}
+
+
+@router.post("/verify-otp")
+def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
+    """Đối chiếu OTP còn hạn, chưa dùng cho email tương ứng."""
+    email = payload.email.lower()
+    record = (
+        db.query(EmailOtp)
+        .filter(
+            EmailOtp.email == email,
+            EmailOtp.ma_otp == payload.otp.strip(),
+            EmailOtp.da_su_dung.is_(False),
+            EmailOtp.het_han >= datetime.utcnow(),
+        )
+        .order_by(EmailOtp.id.desc())
+        .first()
+    )
+    if not record:
+        raise HTTPException(400, "Mã xác thực không đúng hoặc đã hết hạn")
+
+    record.da_su_dung = True
+    db.commit()
+    return {"ok": True, "message": "Xác thực thành công"}

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 # SỬA: Thêm func vào đây để tính SUM
 from sqlalchemy import and_, or_, func 
 # SỬA: Thêm Invoice vào danh sách import từ models
-from app.models import Booking, Field, Membership, Invoice 
+from app.models import Booking, Field, Membership, Invoice, Feedback
 from app.core.config import (
     BookingStatus, MEMBERSHIP_DISCOUNT, MEMBERSHIP_FEE
 )
@@ -109,6 +109,29 @@ def calculate_membership_fee(loai_the: str, thang: int) -> Decimal:
         discount = 0.05
     total = monthly * thang * (1 - discount)
     return Decimal(str(round(total)))
+
+def get_feedback_snapshot(db: Session, san_id: Optional[int] = None) -> dict:
+    """Số liệu thô nhanh về đánh giá (không gọi AI): tổng số, điểm TB, % hài lòng, vài nhận xét gần nhất."""
+    q = db.query(Feedback)
+    if san_id:
+        q = q.join(Booking, Feedback.booking_id == Booking.id).filter(Booking.san_id == san_id)
+    feedbacks = q.order_by(Feedback.ngay_tao.desc()).all()
+
+    total = len(feedbacks)
+    if total == 0:
+        return {"tong_so": 0, "trung_binh": 0.0, "hai_long_pct": 0, "highlights": []}
+
+    avg = sum(f.danh_gia_tong for f in feedbacks) / total
+    hai_long = sum(1 for f in feedbacks if f.danh_gia_tong >= 4)
+    highlights = [f.nhan_xet.strip() for f in feedbacks if f.nhan_xet and f.nhan_xet.strip()][:5]
+
+    return {
+        "tong_so": total,
+        "trung_binh": round(avg, 2),
+        "hai_long_pct": round(hai_long / total * 100),
+        "highlights": highlights,
+    }
+
 
 def is_valid_booking_time(start: time, end: time) -> tuple[bool, str]:
     if start.minute not in (0, 30) or end.minute not in (0, 30):

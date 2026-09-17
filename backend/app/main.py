@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi.staticfiles import StaticFiles
 from app.core.database import Base, engine
 from app.routers import (
     auth, users, fields, bookings, services,
@@ -12,6 +13,9 @@ from app.routers import (
     chat
 )
 from app.utils.scheduler import reminder_loop
+
+# Tạo thư mục lưu trữ ảnh biên lai
+os.makedirs("uploads/receipts", exist_ok=True)
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -90,6 +94,7 @@ app.include_router(shifts.router)
 app.include_router(feedbacks.router)
 app.include_router(reports.router)
 app.include_router(chat.router)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 @app.get("/")
 def root():

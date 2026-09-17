@@ -1,6 +1,9 @@
+import os
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from google import genai
+from google.genai import types
 from app.core.database import get_db
 from app.core.security import get_current_user, require_roles
 from app.core.config import UserRole, BookingStatus
@@ -8,6 +11,15 @@ from app.models import Feedback, User, Booking
 from app.schemas import FeedbackCreate, FeedbackOut
 
 router = APIRouter(prefix="/api/feedbacks", tags=["Feedbacks"])
+
+_summary_client: Optional["genai.Client"] = None
+
+
+def _get_summary_client() -> "genai.Client":
+    global _summary_client
+    if _summary_client is None:
+        _summary_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+    return _summary_client
 
 
 def _fb_to_out(f: Feedback) -> dict:
@@ -105,4 +117,59 @@ def feedback_stats(
         "phan_bo": dist,
         "canh_bao": warn,
         "hai_long": hai_long, # Trả về biến này cho Frontend hứng
+    }
+
+
+@router.get("/summary")
+def feedback_summary(
+    san_id: Optional[int] = None,
+    min_star: Optional[int] = Query(None, ge=1, le=5),
+    max_star: Optional[int] = Query(None, ge=1, le=5),
+    db: Session = Depends(get_db),
+):
+    """Public: số liệu thô + tóm tắt nhanh bằng AI cho một tập đánh giá (lọc theo sân/số sao)."""
+    q = db.query(Feedback).join(Booking, Feedback.booking_id == Booking.id)
+    if san_id:
+        q = q.filter(Booking.san_id == san_id)
+    if min_star:
+        q = q.filter(Feedback.danh_gia_tong >= min_star)
+    if max_star:
+        q = q.filter(Feedback.danh_gia_tong <= max_star)
+    feedbacks = q.order_by(Feedback.ngay_tao.desc()).limit(50).all()
+
+    total = len(feedbacks)
+    if total == 0:
+        return {"tong_so": 0, "trung_binh": 0, "hai_long_pct": 0, "ai_summary": None}
+
+    avg = sum(f.danh_gia_tong for f in feedbacks) / total
+    hai_long_pct = round(sum(1 for f in feedbacks if f.danh_gia_tong >= 4) / total * 100)
+
+    comments = [f.nhan_xet.strip() for f in feedbacks if f.nhan_xet and f.nhan_xet.strip()]
+    ai_summary = None
+    api_key = os.environ.get("GEMINI_API_KEY")
+
+    if len(comments) >= 2 and api_key:
+        try:
+            prompt = (
+                "Bạn là trợ lý tóm tắt đánh giá dịch vụ sân bóng. Dưới đây là các nhận xét thật của khách hàng:\n"
+                + "\n".join(f"- {c}" for c in comments[:30])
+                + "\n\nHãy viết một đoạn tóm tắt ngắn gọn (tối đa 3 câu) bằng tiếng Việt, nêu điểm được khen nhiều "
+                "nhất và điểm bị phàn nàn nhiều nhất (nếu có), giọng văn trung lập, hữu ích cho khách hàng mới đang "
+                "cân nhắc đặt sân. Chỉ trả về đoạn văn thuần, không thêm tiêu đề hay markdown."
+            )
+            response = _get_summary_client().models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(temperature=0.3),
+            )
+            if response and response.text:
+                ai_summary = response.text.strip()
+        except Exception:
+            ai_summary = None
+
+    return {
+        "tong_so": total,
+        "trung_binh": round(avg, 2),
+        "hai_long_pct": hai_long_pct,
+        "ai_summary": ai_summary,
     }

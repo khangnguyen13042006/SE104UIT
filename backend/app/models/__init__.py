@@ -29,6 +29,16 @@ class User(Base):
     feedbacks = relationship("Feedback", back_populates="khach_hang")
 
 
+class EmailOtp(Base):
+    __tablename__ = "email_otps"
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(120), nullable=False, index=True)
+    ma_otp = Column(String(6), nullable=False)
+    het_han = Column(DateTime, nullable=False)
+    da_su_dung = Column(Boolean, nullable=False, default=False)
+    ngay_tao = Column(DateTime, default=datetime.utcnow)
+
+
 class Field(Base):
     __tablename__ = "fields"
     id = Column(Integer, primary_key=True, index=True)

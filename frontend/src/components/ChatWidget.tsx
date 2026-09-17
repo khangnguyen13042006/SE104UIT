@@ -1,10 +1,26 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { MessageCircle, X, Send, Bot, Loader2, Sparkles, CalendarCheck2 } from "lucide-react";
+import {
+  MessageCircle,
+  X,
+  Send,
+  Bot,
+  Loader2,
+  Sparkles,
+  CalendarCheck2,
+  RotateCcw,
+  ShoppingCart,
+  PackagePlus,
+  CheckCircle2,
+  XCircle,
+} from "lucide-react";
+import { apiPost, formatVND, getUser } from "@/lib/api";
 
-interface BookingAction {
+const STAFF_ROLES = ["ADMIN", "QUAN_LY", "NHAN_VIEN"];
+
+interface BookingActionPayload {
   field_id: number;
   field_name: string;
   date: string;
@@ -12,64 +28,134 @@ interface BookingAction {
   duration: number;
 }
 
+interface AddServiceActionPayload {
+  booking_id: number;
+  ma_dat_san: string;
+  dich_vu_id: number;
+  dich_vu_ten: string;
+  don_gia: number;
+  so_luong: number;
+}
+
+interface CreateServiceActionPayload {
+  ten_dich_vu: string;
+  don_gia: number;
+  don_vi_tinh: string;
+  ton_kho: number;
+  la_cho_thue: boolean;
+}
+
+type ActionStatus = "idle" | "loading" | "done" | "error";
+
+type ChatAction =
+  | { type: "booking"; payload: BookingActionPayload }
+  | { type: "add_service"; payload: AddServiceActionPayload; status?: ActionStatus; resultText?: string }
+  | { type: "create_service"; payload: CreateServiceActionPayload; status?: ActionStatus; resultText?: string };
+
 interface Message {
   sender: "user" | "bot";
   text: string;
-  bookingAction?: BookingAction | null;
+  action?: ChatAction | null;
+}
+
+const CUSTOMER_GREETING =
+  "Xin chào! Em là lễ tân ảo Sân Bóng UIT. Anh/chị cần kiểm tra lịch trống, bảng giá hay cần tư vấn chọn sân nào cứ nhắn em nhé!";
+const ADMIN_GREETING =
+  "Xin chào! Em là trợ lý nội bộ. Anh/chị có thể hỏi booking đang chờ xác nhận, dịch vụ sắp hết hàng, đánh giá thấp gần đây, hoặc nhờ em thêm dịch vụ vào bill / tạo dịch vụ mới.";
+
+const CUSTOMER_QUICK_PROMPTS = [
+  "⚽ Xem sân trống hôm nay",
+  "💰 Bảng giá & Giờ cao điểm",
+  "📋 Lịch đá sắp tới của tôi",
+  "💳 Thông tin chuyển khoản STK",
+  "⭐ Ưu đãi thẻ thành viên",
+];
+const ADMIN_QUICK_PROMPTS = [
+  "📋 Booking nào đang chờ xác nhận?",
+  "📦 Dịch vụ nào sắp hết hàng?",
+  "⭐ Có đánh giá thấp gần đây không?",
+  "➕ Tạo dịch vụ mới",
+];
+
+function formatMessageText(text: string) {
+  const lines = text.split("\n");
+  return lines.map((line, lIdx) => {
+    const parts = line.split(/(\*\*.*?\*\*)/g);
+    return (
+      <span key={lIdx} className="block min-h-[1.25em]">
+        {parts.map((part, pIdx) => {
+          if (part.startsWith("**") && part.endsWith("**")) {
+            return (
+              <strong key={pIdx} className="font-semibold text-foreground">
+                {part.slice(2, -2)}
+              </strong>
+            );
+          }
+          return part;
+        })}
+      </span>
+    );
+  });
 }
 
 export default function ChatWidget() {
   const pathname = usePathname();
   const router = useRouter();
+  const isAdminMode = pathname.startsWith("/admin");
+
+  const [user, setUser] = useState<any>(null);
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      sender: "bot",
-      text: "Xin chào! Em là lễ tân ảo Sân Bóng UIT. Anh/chị cần kiểm tra lịch trống, bảng giá hay cần tư vấn chọn sân nào cứ nhắn em nhé!",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([{ sender: "bot", text: CUSTOMER_GREETING }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const prevModeRef = useRef(isAdminMode);
+
+  useEffect(() => {
+    setUser(getUser());
+  }, [pathname]);
+
+  // Reset hội thoại khi chuyển qua lại giữa chế độ khách hàng <-> nội bộ (2 endpoint/ngữ cảnh khác nhau)
+  useEffect(() => {
+    if (prevModeRef.current !== isAdminMode) {
+      prevModeRef.current = isAdminMode;
+      setMessages([{ sender: "bot", text: isAdminMode ? ADMIN_GREETING : CUSTOMER_GREETING }]);
+      setIsOpen(false);
+    }
+  }, [isAdminMode]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  if (pathname.startsWith("/admin")) return null;
+  const isStaff = user && STAFF_ROLES.includes(user.vai_tro);
+  if (isAdminMode && !isStaff) return null;
 
-  const handleSend = async () => {
-    if (!input.trim() || loading) return;
+  const quickPrompts = isAdminMode ? ADMIN_QUICK_PROMPTS : CUSTOMER_QUICK_PROMPTS;
 
-    const userText = input.trim();
-    setInput("");
+  const sendMessage = async (userText: string) => {
+    if (!userText.trim() || loading) return;
+
     setMessages((prev) => [...prev, { sender: "user", text: userText }]);
     setLoading(true);
 
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-      const res = await fetch(`${apiUrl}/api/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ message: userText }),
+      const endpoint = isAdminMode ? "/api/chat/admin" : "/api/chat";
+      const data = await apiPost(endpoint, {
+        message: userText,
+        history: messages.slice(-6).map((m) => ({ sender: m.sender, text: m.text })),
       });
 
-      if (!res.ok) throw new Error("Lỗi kết nối");
+      let action: ChatAction | null = null;
+      if (data.booking_action) {
+        action = { type: "booking", payload: data.booking_action };
+      } else if (data.add_service_action) {
+        action = { type: "add_service", payload: data.add_service_action, status: "idle" };
+      } else if (data.create_service_action) {
+        action = { type: "create_service", payload: data.create_service_action, status: "idle" };
+      }
 
-      const data = await res.json();
-      setMessages((prev) => [
-        ...prev,
-        {
-          sender: "bot",
-          text: data.reply,
-          bookingAction: data.booking_action,
-        },
-      ]);
+      setMessages((prev) => [...prev, { sender: "bot", text: data.reply, action }]);
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -83,7 +169,23 @@ export default function ChatWidget() {
     }
   };
 
-  const handleAutoFill = (action: BookingAction) => {
+  const handleSend = () => {
+    const text = input.trim();
+    if (!text) return;
+    setInput("");
+    sendMessage(text);
+  };
+
+  const handleQuickSend = (promptText: string) => {
+    if (loading) return;
+    sendMessage(promptText);
+  };
+
+  const handleResetChat = () => {
+    setMessages([{ sender: "bot", text: isAdminMode ? ADMIN_GREETING : CUSTOMER_GREETING }]);
+  };
+
+  const handleAutoFill = (action: BookingActionPayload) => {
     setIsOpen(false);
     const query = new URLSearchParams({
       field_id: String(action.field_id),
@@ -93,7 +195,43 @@ export default function ChatWidget() {
       focus: "phone",
     }).toString();
 
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("chatbot-autofill", { detail: action }));
+    }
+
     router.push(`/booking?${query}`);
+  };
+
+  function updateActionAt(idx: number, patch: Partial<Extract<ChatAction, { status?: ActionStatus }>>) {
+    setMessages((prev) =>
+      prev.map((m, i) => (i === idx && m.action ? { ...m, action: { ...m.action, ...patch } as ChatAction } : m))
+    );
+  }
+
+  const handleAddService = async (idx: number, payload: AddServiceActionPayload) => {
+    updateActionAt(idx, { status: "loading" });
+    try {
+      await apiPost(`/api/bookings/${payload.booking_id}/services`, {
+        dich_vu_id: payload.dich_vu_id,
+        so_luong: payload.so_luong,
+      });
+      updateActionAt(idx, {
+        status: "done",
+        resultText: `Đã thêm ${payload.so_luong} × ${payload.dich_vu_ten} vào bill đơn ${payload.ma_dat_san}.`,
+      });
+    } catch (e: any) {
+      updateActionAt(idx, { status: "error", resultText: e.message || "Có lỗi xảy ra, vui lòng thử lại." });
+    }
+  };
+
+  const handleCreateService = async (idx: number, payload: CreateServiceActionPayload) => {
+    updateActionAt(idx, { status: "loading" });
+    try {
+      await apiPost("/api/services", payload);
+      updateActionAt(idx, { status: "done", resultText: `Đã tạo dịch vụ "${payload.ten_dich_vu}" thành công.` });
+    } catch (e: any) {
+      updateActionAt(idx, { status: "error", resultText: e.message || "Có lỗi xảy ra, vui lòng thử lại." });
+    }
   };
 
   return (
@@ -109,7 +247,7 @@ export default function ChatWidget() {
       )}
 
       {isOpen && (
-        <div className="flex flex-col w-80 sm:w-96 h-[520px] bg-card border border-border rounded-3xl shadow-2xl overflow-hidden transition-all duration-300">
+        <div className="flex flex-col w-80 sm:w-96 h-[560px] bg-card border border-border rounded-3xl shadow-2xl overflow-hidden transition-all duration-300">
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground">
             <div className="flex items-center gap-2.5">
@@ -118,53 +256,89 @@ export default function ChatWidget() {
               </div>
               <div>
                 <p className="font-semibold text-sm leading-tight flex items-center gap-1.5">
-                  Lễ tân ảo UIT
+                  {isAdminMode ? "Trợ lý nội bộ" : "Lễ tân ảo UIT"}
                   <Sparkles className="w-3.5 h-3.5 text-accent" />
                 </p>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className="w-2 h-2 bg-emerald-300 rounded-full animate-pulse" />
-                  <span className="text-[11px] text-white/80 font-normal">Trực tuyến 24/7</span>
+                  <span className="text-[11px] text-white/80 font-normal">
+                    {isAdminMode ? "Chỉ dành cho nhân viên" : "Trực tuyến 24/7"}
+                  </span>
                 </div>
               </div>
             </div>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleResetChat}
+                title="Làm mới cuộc trò chuyện"
+                aria-label="Làm mới cuộc trò chuyện"
+                className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setIsOpen(false)}
+                title="Đóng chat"
+                aria-label="Đóng chat"
+                className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Chat box */}
           <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-secondary/30 text-sm">
             {messages.map((m, idx) => (
-              <div
-                key={idx}
-                className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}
-              >
+              <div key={idx} className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
                 <div
-                  className={`max-w-[88%] px-4 py-2.5 rounded-2xl whitespace-pre-line text-sm leading-relaxed ${
+                  className={`max-w-[88%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
                     m.sender === "user"
                       ? "bg-primary text-primary-foreground rounded-br-none shadow-md shadow-primary/15"
                       : "bg-card text-foreground border border-border rounded-bl-none shadow-sm"
                   }`}
                 >
-                  <p>{m.text}</p>
+                  <div>{formatMessageText(m.text)}</div>
 
-                  {/* Nút đặt sân tự động */}
-                  {m.bookingAction && (
+                  {m.action?.type === "booking" && (
                     <div className="mt-3 pt-2.5 border-t border-border/70">
                       <p className="text-[11px] text-muted-foreground mb-2">
                         💡 Bạn có muốn tạo đơn giữ sân ngay bây giờ không?
                       </p>
                       <button
-                        onClick={() => handleAutoFill(m.bookingAction!)}
+                        onClick={() => handleAutoFill(m.action!.payload as BookingActionPayload)}
                         className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm transition active:scale-[0.98]"
                       >
                         <CalendarCheck2 className="w-4 h-4" />
                         <span>Đặt sân này giúp tôi</span>
                       </button>
                     </div>
+                  )}
+
+                  {m.action?.type === "add_service" && (
+                    <ActionCard
+                      icon={<ShoppingCart className="w-3.5 h-3.5" />}
+                      description={`Thêm ${m.action.payload.so_luong} × ${m.action.payload.dich_vu_ten} vào bill đơn ${m.action.payload.ma_dat_san}?`}
+                      buttonLabel="Thêm vào bill"
+                      status={m.action.status}
+                      resultText={m.action.resultText}
+                      onConfirm={() => handleAddService(idx, m.action!.payload as AddServiceActionPayload)}
+                    />
+                  )}
+
+                  {m.action?.type === "create_service" && (
+                    <ActionCard
+                      icon={<PackagePlus className="w-3.5 h-3.5" />}
+                      description={`Tạo dịch vụ mới "${m.action.payload.ten_dich_vu}" — giá ${formatVND(
+                        m.action.payload.don_gia
+                      )}/${m.action.payload.don_vi_tinh}, tồn kho ${m.action.payload.ton_kho}${
+                        m.action.payload.la_cho_thue ? " (đồ cho thuê)" : ""
+                      }?`}
+                      buttonLabel="Tạo dịch vụ"
+                      status={m.action.status}
+                      resultText={m.action.resultText}
+                      onConfirm={() => handleCreateService(idx, m.action!.payload as CreateServiceActionPayload)}
+                    />
                   )}
                 </div>
               </div>
@@ -173,11 +347,25 @@ export default function ChatWidget() {
               <div className="flex justify-start">
                 <div className="px-3.5 py-2 bg-card text-muted-foreground border border-border rounded-2xl text-xs flex items-center gap-2 shadow-sm">
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                  <span>Đang tra cứu lịch sân...</span>
+                  <span>{isAdminMode ? "Đang tra cứu dữ liệu vận hành..." : "Đang tra cứu lịch sân..."}</span>
                 </div>
               </div>
             )}
             <div ref={messagesEndRef} />
+          </div>
+
+          {/* Quick suggestion chips */}
+          <div className="px-3 py-2 border-t border-border/60 bg-card/60 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {quickPrompts.map((qp, idx) => (
+              <button
+                key={idx}
+                onClick={() => handleQuickSend(qp)}
+                disabled={loading}
+                className="whitespace-nowrap px-2.5 py-1 text-[11px] font-medium rounded-full bg-secondary/80 hover:bg-primary/10 hover:text-primary border border-border transition shrink-0 disabled:opacity-50"
+              >
+                {qp}
+              </button>
+            ))}
           </div>
 
           {/* Input */}
@@ -187,7 +375,7 @@ export default function ChatWidget() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
-              placeholder="Hỏi giờ trống, bảng giá, chọn sân..."
+              placeholder={isAdminMode ? "Hỏi booking, tồn kho, hoặc nhờ thêm dịch vụ..." : "Hỏi giờ trống, bảng giá, chọn sân..."}
               className="flex-1 px-4 py-2 bg-background border border-border rounded-full text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition"
             />
             <button
@@ -199,6 +387,57 @@ export default function ChatWidget() {
             </button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function ActionCard({
+  icon,
+  description,
+  buttonLabel,
+  status,
+  resultText,
+  onConfirm,
+}: {
+  icon: React.ReactNode;
+  description: string;
+  buttonLabel: string;
+  status?: ActionStatus;
+  resultText?: string;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="mt-3 pt-2.5 border-t border-border/70">
+      <p className="text-[11px] text-muted-foreground mb-2 flex items-start gap-1.5">
+        <span className="mt-0.5 text-primary shrink-0">{icon}</span>
+        <span>{description}</span>
+      </p>
+
+      {status === "done" || status === "error" ? (
+        <div
+          className={`flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-xl ${
+            status === "done"
+              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+              : "bg-destructive/10 text-destructive"
+          }`}
+        >
+          {status === "done" ? (
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+          ) : (
+            <XCircle className="w-3.5 h-3.5 shrink-0" />
+          )}
+          <span>{resultText}</span>
+        </div>
+      ) : (
+        <button
+          onClick={onConfirm}
+          disabled={status === "loading"}
+          className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm transition active:scale-[0.98] disabled:opacity-60"
+        >
+          {status === "loading" ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+          <span>{status === "loading" ? "Đang xử lý..." : buttonLabel}</span>
+        </button>
       )}
     </div>
   );

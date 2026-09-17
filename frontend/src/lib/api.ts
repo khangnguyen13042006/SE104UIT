@@ -71,6 +71,38 @@ export const apiPut = (path: string, data: any) =>
   api(path, { method: "PUT", body: JSON.stringify(data) });
 export const apiDelete = (path: string) => api(path, { method: "DELETE" });
 
+export async function apiUpload(path: string, formData: FormData): Promise<any> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+  } catch (err: any) {
+    throw new Error(
+      `Không kết nối được tới backend (${API_URL}). Kiểm tra kết nối mạng hoặc server.`
+    );
+  }
+
+  const ct = res.headers.get("content-type") || "";
+  const body = ct.includes("application/json") ? await res.json() : await res.text();
+
+  if (!res.ok) {
+    const detail = typeof body === "object" && body?.detail !== undefined ? body.detail : null;
+    const msg = typeof detail === "string" ? detail : (detail ? JSON.stringify(detail) : `Lỗi ${res.status}`);
+    const err: any = new Error(msg);
+    err.status = res.status;
+    err.detail = detail;
+    throw err;
+  }
+  return body;
+}
+
 export function formatVND(n: number | string): string {
   const num = typeof n === "string" ? parseFloat(n) : n;
   return new Intl.NumberFormat("vi-VN").format(Math.round(num)) + "đ";

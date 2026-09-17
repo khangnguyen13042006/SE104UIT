@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "@/components/Navbar";
@@ -47,8 +47,15 @@ type Service = {
   ton_kho: number;
 };
 
-export default function BookingPage() {
+function BookingContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const fieldIdParam = searchParams.get("field_id");
+  const dateParam = searchParams.get("date");
+  const timeParam = searchParams.get("time");
+  const durationParam = searchParams.get("duration");
+  const focusParam = searchParams.get("focus");
   
   const [fields, setFields] = useState<Field[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -60,10 +67,31 @@ export default function BookingPage() {
     return d;
   }, []);
 
-  const [selectedDate, setSelectedDate] = useState<Date>(today);
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      const [y, m, d] = dateParam.split("-").map(Number);
+      const parsed = new Date(y, m - 1, d, 0, 0, 0, 0);
+      const nowZero = new Date();
+      nowZero.setHours(0, 0, 0, 0);
+      if (parsed >= nowZero) return parsed;
+    }
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+
   const [bookedRanges, setBookedRanges] = useState<{ s: number; e: number }[]>([]);
-  const [startTime, setStartTime] = useState<string | null>(null);
-  const [duration, setDuration] = useState<number>(1);
+  const [startTime, setStartTime] = useState<string | null>(() => {
+    if (timeParam && START_TIMES.includes(timeParam)) return timeParam;
+    return null;
+  });
+  const [duration, setDuration] = useState<number>(() => {
+    if (durationParam) {
+      const d = parseFloat(durationParam);
+      if (DURATIONS.includes(d)) return d;
+    }
+    return 1.5;
+  });
   const [chosenSvc, setChosenSvc] = useState<Record<number, number>>({});
   const [tenKhach, setTenKhach] = useState("");
   const [sdtKhach, setSdtKhach] = useState("");
@@ -72,6 +100,10 @@ export default function BookingPage() {
   const [err, setErr] = useState("");
   const [loadErr, setLoadErr] = useState("");
   const [memberStatus, setMemberStatus] = useState<{ tier: string; tier_name: string; discount_percent: number } | null>(null);
+
+  // Trạng thái hỗ trợ tự động điền từ Chatbot
+  const [aiAppliedNotice, setAiAppliedNotice] = useState<string | null>(null);
+  const contactSectionRef = useRef<HTMLDivElement>(null);
   
   const dateStr = useMemo(() => {
     const y = selectedDate.getFullYear();
@@ -79,6 +111,72 @@ export default function BookingPage() {
     const d = String(selectedDate.getDate()).padStart(2, "0");
     return `${y}-${m}-${d}`;
   }, [selectedDate]);
+
+  // Cập nhật khi searchParams thay đổi
+  useEffect(() => {
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      const [y, m, d] = dateParam.split("-").map(Number);
+      const parsed = new Date(y, m - 1, d, 0, 0, 0, 0);
+      const nowZero = new Date();
+      nowZero.setHours(0, 0, 0, 0);
+      if (parsed >= nowZero) setSelectedDate(parsed);
+    }
+  }, [dateParam]);
+
+  useEffect(() => {
+    if (durationParam) {
+      const d = parseFloat(durationParam);
+      if (DURATIONS.includes(d)) setDuration(d);
+    }
+  }, [durationParam]);
+
+  useEffect(() => {
+    if (timeParam && START_TIMES.includes(timeParam)) {
+      setStartTime(timeParam);
+      if (activeField) {
+        setAiAppliedNotice(`Lễ tân ảo đã tự động chọn sân "${activeField.ten_san}" lúc ${timeParam} ngày ${dateStr}!`);
+      }
+    }
+  }, [timeParam, activeField, dateStr]);
+
+  useEffect(() => {
+    if (fieldIdParam && fields.length > 0) {
+      const target = fields.find((f) => String(f.id) === fieldIdParam);
+      if (target && target.id !== activeField?.id) {
+        setActiveField(target);
+      }
+    }
+  }, [fieldIdParam, fields, activeField]);
+
+  // Lắng nghe sự kiện autofill trực tiếp từ Chatbot
+  useEffect(() => {
+    const handleAutofillEvent = (e: any) => {
+      const action = e.detail;
+      if (!action) return;
+
+      if (action.field_id && fields.length > 0) {
+        const target = fields.find((f) => f.id === action.field_id);
+        if (target) setActiveField(target);
+      }
+      if (action.date && /^\d{4}-\d{2}-\d{2}$/.test(action.date)) {
+        const [y, m, d] = action.date.split("-").map(Number);
+        setSelectedDate(new Date(y, m - 1, d, 0, 0, 0, 0));
+      }
+      if (action.duration && DURATIONS.includes(action.duration)) {
+        setDuration(action.duration);
+      }
+      if (action.time && START_TIMES.includes(action.time)) {
+        setStartTime(action.time);
+        setAiAppliedNotice(`Lễ tân ảo đã tự động chọn ${action.field_name || "sân"} lúc ${action.time} ngày ${action.date}!`);
+      }
+      setTimeout(() => {
+        contactSectionRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 350);
+    };
+
+    window.addEventListener("chatbot-autofill", handleAutofillEvent);
+    return () => window.removeEventListener("chatbot-autofill", handleAutofillEvent);
+  }, [fields]);
 
   useEffect(() => {
     // 1. Kiểm tra đăng nhập TRƯỚC KHI load dữ liệu sân
@@ -97,8 +195,12 @@ export default function BookingPage() {
       .then(([f, s]) => {
         setFields(f);
         setServices(s);
-        if (f.length > 0) setActiveField(f[0]);
-        else setLoadErr("Hệ thống chưa có dữ liệu sân.");
+        if (f.length > 0) {
+          const matched = fieldIdParam ? f.find((item: Field) => String(item.id) === fieldIdParam) : null;
+          setActiveField(matched || f[0]);
+        } else {
+          setLoadErr("Hệ thống chưa có dữ liệu sân.");
+        }
       })
       .catch((e: any) => {
         setLoadErr(e.message?.includes("Failed to fetch") ? "Không kết nối được tới backend." : `Lỗi: ${e.message}`);
@@ -116,12 +218,12 @@ export default function BookingPage() {
     setTenKhach(u.ho_ten || "");
     setSdtKhach(u.sdt || "");
     setEmailKhach(u.email || "");
-  }, [router]);
+  }, [router, fieldIdParam]);
     
 
   useEffect(() => {
     if (!activeField) return;
-    setStartTime(null);
+
     apiGet(`/api/fields/${activeField.id}/schedule?ngay=${dateStr}`)
       .then((r) => {
         const ranges = r.bookings.map((b: any) => {
@@ -130,9 +232,25 @@ export default function BookingPage() {
           return { s: sh * 60 + sm, e: eh * 60 + em };
         });
         setBookedRanges(ranges);
+
+        if (timeParam && START_TIMES.includes(timeParam)) {
+          setStartTime(timeParam);
+          setAiAppliedNotice(`Lễ tân ảo đã tự động chọn sân "${activeField.ten_san}" lúc ${timeParam} ngày ${dateStr}!`);
+        }
       })
-      .catch(() => setBookedRanges([]));
-  }, [activeField, dateStr]);
+      .catch(() => {
+        setBookedRanges([]);
+      });
+  }, [activeField?.id, dateStr, timeParam]);
+
+  useEffect(() => {
+    if (focusParam === "phone" && timeParam) {
+      const timer = setTimeout(() => {
+        contactSectionRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [focusParam, timeParam]);
 
   function isSlotBooked(gbd: string, gkt: string): boolean {
     const [sh, sm] = gbd.split(":").map(Number);
@@ -263,6 +381,29 @@ export default function BookingPage() {
 
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
+            {/* Banner thông báo tự động điền từ Chatbot */}
+            <AnimatePresence>
+              {aiAppliedNotice && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-3 text-emerald-800 dark:text-emerald-300"
+                >
+                  <div className="flex items-center gap-3">
+                    <Sparkles className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="text-sm font-medium">✨ {aiAppliedNotice}</span>
+                  </div>
+                  <button
+                    onClick={() => setAiAppliedNotice(null)}
+                    className="text-xs px-2.5 py-1 rounded-lg bg-emerald-600/15 hover:bg-emerald-600/25 transition font-semibold shrink-0"
+                  >
+                    Đã hiểu
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} key={activeField.id} className="relative aspect-[16/9] rounded-3xl overflow-hidden border border-border shadow-lg">
               <img src={`/fields/img-${(fields.findIndex((f) => f.id === activeField.id) % 6) + 1}.jpg`} alt={activeField.ten_san} className="absolute inset-0 w-full h-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
@@ -360,7 +501,7 @@ export default function BookingPage() {
               </div>
             </motion.div>
 
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="bg-card rounded-3xl border border-border p-6">
+            <motion.div ref={contactSectionRef} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="bg-card rounded-3xl border border-border p-6">
               <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">5</span>Thông tin liên hệ</h2>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div><label className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2"><User className="w-4 h-4" /> Họ tên <span className="text-destructive">*</span></label><input value={tenKhach} onChange={(e) => setTenKhach(e.target.value)} placeholder="Nguyễn Văn A" className="w-full px-4 py-3 rounded-xl border border-input bg-background focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all" /></div>
@@ -490,5 +631,20 @@ export default function BookingPage() {
         </div>
       </div>
     </>
+  );
+}
+
+export default function BookingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-20 text-center flex flex-col items-center justify-center min-h-[60vh]">
+          <Loader2 className="animate-spin w-8 h-8 text-primary mb-3" />
+          <p className="text-sm text-muted-foreground">Đang tải dữ liệu đặt sân...</p>
+        </div>
+      }
+    >
+      <BookingContent />
+    </Suspense>
   );
 }
