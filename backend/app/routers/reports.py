@@ -159,6 +159,93 @@ def peak_hours(
     }
 
 
+@router.get("/today")
+def today_dashboard(
+    ngay: Optional[date] = Query(None, description="Mặc định: hôm nay theo giờ VN"),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.ADMIN, UserRole.QUAN_LY, UserRole.NHAN_VIEN)),
+):
+    """Số liệu + lịch sân của một ngày (mặc định hôm nay), dùng cho Dashboard.
+    Chỉ trả về các sân CÓ lượt đặt trong ngày; mỗi khung giờ kèm dịch vụ đi kèm và tình trạng
+    (đã hủy / sắp tới / đang đá / đã xong) được suy ra theo giờ hiện tại nên client chỉ cần poll lại."""
+    now_vn = datetime.utcnow() + timedelta(hours=7)
+    day = ngay or now_vn.date()
+
+    bookings = (
+        db.query(Booking)
+        .filter(Booking.ngay_dat == day)
+        .order_by(Booking.gio_bat_dau)
+        .all()
+    )
+    active = [b for b in bookings if b.trang_thai != BookingStatus.HUY]
+
+    tong_dt = sum(float(b.invoice.tong_cong) for b in active if b.invoice)
+    tong_gio = sum(b.so_gio for b in active)
+    so_san = db.query(Field).count() or 1
+    gio_hd = 16 * so_san  # 6h-22h mỗi sân
+    khach = set()
+    for b in active:
+        khach.add(b.khach_hang_id if b.khach_hang_id else f"vl:{b.sdt_khach_vang_lai or b.id}")
+
+    by_field: dict[int, list] = {}
+    for b in bookings:
+        by_field.setdefault(b.san_id, []).append(b)
+
+    san_list = []
+    for f in db.query(Field).order_by(Field.id).all():
+        items = by_field.get(f.id)
+        if not items:
+            continue  # sân không có lượt đặt thì không hiển thị
+        slots = []
+        for b in items:
+            start_dt = datetime.combine(day, b.gio_bat_dau)
+            end_dt = datetime.combine(day, b.gio_ket_thuc)
+            if b.trang_thai == BookingStatus.HUY:
+                tinh_trang = "huy"
+            elif b.trang_thai == BookingStatus.HOAN_THANH or end_dt <= now_vn:
+                tinh_trang = "xong"
+            elif start_dt <= now_vn < end_dt:
+                tinh_trang = "dang_da"
+            else:
+                tinh_trang = "sap_toi"
+            slots.append({
+                "id": b.id,
+                "ma_dat_san": b.ma_dat_san,
+                "gio_bat_dau": b.gio_bat_dau,
+                "gio_ket_thuc": b.gio_ket_thuc,
+                "trang_thai": b.trang_thai,
+                "tinh_trang": tinh_trang,
+                "ten_khach": b.khach_hang.ho_ten if b.khach_hang else (b.ten_khach_vang_lai or "Khách lẻ"),
+                "tong_tien": b.invoice.tong_cong if b.invoice else b.tien_san,
+                "dich_vu": [
+                    {
+                        "ten_dich_vu": bs.dich_vu.ten_dich_vu if bs.dich_vu else "?",
+                        "so_luong": bs.so_luong,
+                        "thanh_tien": bs.thanh_tien,
+                    }
+                    for bs in b.booking_services
+                ],
+            })
+        san_list.append({
+            "san_id": f.id,
+            "ten_san": f.ten_san,
+            "loai_san": f.loai_san.value,
+            "slots": slots,
+        })
+
+    return {
+        "ngay": day,
+        "gio_hien_tai": now_vn,
+        "tong_doanh_thu": round(tong_dt),
+        "tong_luot_dat": len(active),
+        "so_luot_huy": len(bookings) - len(active),
+        "so_khach": len(khach),
+        "ty_le_lap_day": round(tong_gio / gio_hd * 100, 2) if gio_hd else 0,
+        "tong_gio": round(tong_gio, 1),
+        "san": san_list,
+    }
+
+
 @router.get("/summary")
 def summary_report(
     tu_ngay: date = Query(...),

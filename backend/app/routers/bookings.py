@@ -674,6 +674,7 @@ def complete_booking(
             restocked.append(f"{svc.ten_dich_vu} +{bs.so_luong}")
 
     b.trang_thai = BookingStatus.HOAN_THANH
+    mark_invoice_paid(b)  # đơn đã đá xong = đã thu đủ tiền
     if restocked:
         note = f"[AUTO-RESTOCK {datetime.now().strftime('%H:%M %d/%m/%Y')}] " + ", ".join(restocked)
         b.ghi_chu = (b.ghi_chu + "\n" + note) if b.ghi_chu else note
@@ -966,12 +967,28 @@ def remove_booking_service(
     return _booking_to_out(b)
 
 
+def _assert_can_pay(b: Booking, user: Optional[User]) -> None:
+    """Chặn người lạ thao tác thanh toán trên đơn của khách khác.
+    Đơn của tài khoản đã đăng ký: chỉ chính chủ hoặc nhân sự. Đơn khách vãng lai: ai có link/QR cũng được."""
+    if b.khach_hang_id is None:
+        return
+    if user is None:
+        raise HTTPException(401, "Vui lòng đăng nhập để thao tác với đơn này")
+    if user.vai_tro == UserRole.KHACH_HANG and b.khach_hang_id != user.id:
+        raise HTTPException(403, "Bạn không có quyền thao tác với đơn này")
+
+
 @router.post("/{booking_id}/claim-paid")
-def claim_paid(booking_id: int, db: Session = Depends(get_db)):
+def claim_paid(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_current_user_optional),
+):
     """Khách báo đã chuyển khoản (không gửi ảnh) → đơn chờ nhân viên xác nhận; thông báo cho Admin/Quản lý/Nhân viên."""
     b = db.query(Booking).filter(Booking.id == booking_id).first()
     if not b:
         raise HTTPException(404, "Không tìm thấy booking")
+    _assert_can_pay(b, user)
     if b.trang_thai != BookingStatus.CHO_XAC_NHAN:
         return {"ok": True, "message": "Đơn không còn cần xác nhận thanh toán"}
     if b.khach_bao_chuyen_khoan:
@@ -1019,6 +1036,7 @@ async def verify_receipt(
     booking_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_current_user_optional),
 ):
     """
     Tự động xác thực hóa đơn chuyển khoản bằng AI Vision (Gemini):
@@ -1030,6 +1048,7 @@ async def verify_receipt(
     b = db.query(Booking).filter(Booking.id == booking_id).first()
     if not b:
         raise HTTPException(404, "Không tìm thấy đơn đặt sân")
+    _assert_can_pay(b, user)
 
     balance_payment = amount_paid(b) > 0  # thanh toán phần chênh lệch sau đổi lịch (đã trả một phần trước đó)
     due_amount = payment_due(b)

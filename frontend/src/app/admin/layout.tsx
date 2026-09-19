@@ -1,15 +1,28 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { apiGet, getUser, clearToken, formatVND } from "@/lib/api";
+import { getUser, clearToken } from "@/lib/api";
+import { useApi, prefetch, clearApiCache } from "@/lib/useApi";
 import {
   LayoutDashboard, Calendar, MapPin, Package, Users, ClipboardList,
   Star, FileBarChart, LogOut, Menu, X, Zap, ChevronRight, Bell,
   CheckCircle2, Clock, AlertCircle, UserCog, Check, CheckCheck
 } from "lucide-react";
+
+// Dữ liệu các trang quản trị hay vào — tải trước khi rê chuột vào menu để chuyển trang là có ngay
+const PREFETCH: Record<string, string[]> = {
+  "/admin": ["/api/reports/today"],
+  "/admin/bookings": ["/api/bookings", "/api/fields", "/api/services"],
+  "/admin/fields": ["/api/fields"],
+  "/admin/services": ["/api/services"],
+  "/admin/users": ["/api/users"],
+  "/admin/staff": ["/api/shifts", "/api/fields"],
+  "/admin/shifts": ["/api/shifts", "/api/users?vai_tro=NHAN_VIEN", "/api/fields"],
+  "/admin/feedbacks": ["/api/feedbacks"],
+};
 
 const MENU = [
   { href: "/admin", icon: LayoutDashboard, label: "Dashboard", roles: ["ADMIN", "QUAN_LY", "NHAN_VIEN"] },
@@ -27,12 +40,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [user, setU] = useState<any>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [notifs, setNotifs] = useState<any[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
-  const unreadCount = notifs.filter((n) => !readIds.has(n.id)).length;
   const router = useRouter();
   const pathname = usePathname();
   const notifRef = useRef<HTMLDivElement>(null);
+
+  // 1 request duy nhất cho cả 3 nhóm thông báo, tự làm mới mỗi 60s
+  const { data: groups, loading: notifLoading } = useApi<any>(user ? "/api/notifications" : null, 60000);
+  const allNotifs: any[] = useMemo(
+    () => [...(groups?.dat_san || []), ...(groups?.dich_vu || []), ...(groups?.danh_gia || [])],
+    [groups]
+  );
+  const unreadCount = allNotifs.filter((n) => !readIds.has(n.id)).length;
 
   useEffect(() => {
     const u = getUser();
@@ -59,110 +78,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     persistRead(new Set(readIds).add(id));
   }
   function markAllRead() {
-    persistRead(new Set([...readIds, ...notifs.map((n) => n.id)]));
+    persistRead(new Set([...readIds, ...allNotifs.map((n) => n.id)]));
   }
-
-  // Load notifications: booking chờ xác nhận, đánh giá thấp, dịch vụ sắp hết hàng, booking đã hủy, booking đổi lịch
-  async function loadNotifs() {
-    if (!user) return;
-    try {
-      const tasks: any[] = [
-        apiGet("/api/bookings?trang_thai=CHO_XAC_NHAN").catch(() => []),
-        apiGet("/api/services").catch(() => []),
-        apiGet("/api/bookings?trang_thai=HUY").catch(() => []),
-        apiGet("/api/bookings?da_doi_lich=true").catch(() => []),
-      ];
-      if (["ADMIN", "QUAN_LY"].includes(user.vai_tro)) {
-        tasks.push(apiGet("/api/feedbacks?max_star=2").catch(() => []));
-      }
-      const [pendingBookings, allServices, cancelledBookings, rescheduledBookings, badFeedbacks] =
-        await Promise.all(tasks);
-
-      const items: any[] = [];
-      // Đơn khách đã báo chuyển khoản (cần duyệt gấp) lên đầu để không bị cắt khỏi danh sách
-      [...(pendingBookings || [])]
-        .sort((x: any, y: any) => (y.khach_bao_chuyen_khoan ? 1 : 0) - (x.khach_bao_chuyen_khoan ? 1 : 0))
-        .slice(0, 10)
-        .forEach((b: any) => {
-        const claimed = !!b.khach_bao_chuyen_khoan;
-        const due = parseFloat(b.invoice?.so_tien_can_tt || 0) || parseFloat(b.tien_san);
-        items.push({
-          id: `b-${b.id}-${b.ngay_tao}-${b.khach_bao_chuyen_khoan || ""}`,
-          type: "booking",
-          icon: claimed ? "💬" : "📅",
-          title: claimed ? "Khách báo đã chuyển khoản" : "Booking chờ xác nhận",
-          desc: claimed
-            ? `${b.ma_dat_san} • ${b.ten_khach || "khách"} • ${formatVND(due)} — cần kiểm tra & xác nhận`
-            : `${b.ten_san} • ${b.ten_khach || "khách"} • ${formatVND(b.tien_san)}`,
-          time: claimed ? b.khach_bao_chuyen_khoan + "Z" : b.ngay_tao,
-          href: "/admin/bookings",
-          urgent: claimed,
-        });
-      });
-      (badFeedbacks || []).slice(0, 5).forEach((f: any) => {
-        items.push({
-          id: `f-${f.id}`,
-          type: "feedback",
-          icon: "⚠️",
-          title: `Đánh giá thấp (${f.danh_gia_tong}/5)`,
-          desc: `${f.ten_khach || "Khách"} đánh giá ${f.ten_san}`,
-          time: f.ngay_tao,
-          href: "/admin/feedbacks",
-          urgent: true,
-        });
-      });
-      (allServices || [])
-        .filter((s: any) => s.trang_thai === "HOAT_DONG" && s.ton_kho < 5)
-        .slice(0, 5)
-        .forEach((s: any) => {
-          items.push({
-            id: `s-${s.id}-${s.ton_kho}`,
-            type: "service",
-            icon: "📦",
-            title: "Dịch vụ sắp hết hàng",
-            desc: `${s.ten_dich_vu}: còn ${s.ton_kho} ${s.don_vi_tinh}`,
-            time: new Date().toISOString(),
-            href: "/admin/services",
-            urgent: true,
-          });
-        });
-      (cancelledBookings || []).slice(0, 5).forEach((b: any) => {
-        items.push({
-          id: `c-${b.id}`,
-          type: "cancel",
-          icon: "❌",
-          title: "Booking đã hủy",
-          desc: `${b.ten_san} • ${b.ten_khach || "khách"} • ${b.hoan_tien ? "Có hoàn tiền" : "Không hoàn tiền"}`,
-          time: b.ngay_huy || b.ngay_tao,
-          href: "/admin/bookings",
-          urgent: b.hoan_tien === true,
-        });
-      });
-      (rescheduledBookings || []).slice(0, 5).forEach((b: any) => {
-        items.push({
-          id: `r-${b.id}-${b.ngay_doi_lich_gan_nhat}`,
-          type: "reschedule",
-          icon: "🔄",
-          title: "Đổi lịch đặt sân",
-          desc: `${b.ma_dat_san} • ${b.ten_san} → ${b.ngay_dat} ${b.gio_bat_dau?.slice(0, 5)}-${b.gio_ket_thuc?.slice(0, 5)}`,
-          time: b.ngay_doi_lich_gan_nhat || b.ngay_tao,
-          href: "/admin/bookings",
-          urgent: false,
-        });
-      });
-
-      items.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-      setNotifs(items);
-    } catch {}
-  }
-
-  useEffect(() => {
-    if (user) {
-      loadNotifs();
-      const interval = setInterval(loadNotifs, 60000); // refresh every 60s
-      return () => clearInterval(interval);
-    }
-  }, [user]);
 
   // Close notif dropdown when click outside
   useEffect(() => {
@@ -175,7 +92,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [notifOpen]);
 
-  function logout() { clearToken(); router.push("/"); }
+  function logout() { clearToken(); clearApiCache(); router.push("/"); }
 
   if (!user) return null;
   const items = MENU.filter((m) => m.roles.includes(user.vai_tro));
@@ -206,6 +123,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             const Icon = m.icon;
             return (
               <Link key={m.href} href={m.href} onClick={() => setSidebarOpen(false)}
+                onMouseEnter={() => (PREFETCH[m.href] || []).forEach(prefetch)}
+                onTouchStart={() => (PREFETCH[m.href] || []).forEach(prefetch)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-200 ${
                   active ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-lg shadow-primary/20"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
@@ -288,7 +207,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   </span>
                 )}
               </button>
-              <NotifDropdown open={notifOpen} notifs={notifs} onClose={() => setNotifOpen(false)}
+              <NotifDropdown open={notifOpen} groups={groups || {}} loading={notifLoading} onClose={() => setNotifOpen(false)}
                 readIds={readIds} onRead={markRead} onReadAll={markAllRead} unreadCount={unreadCount} />
             </div>
             <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-secondary">
@@ -305,7 +224,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {notifOpen && (
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
               className="lg:hidden mx-4 mt-2 z-30">
-              <NotifList notifs={notifs} onClose={() => setNotifOpen(false)}
+              <NotifList groups={groups || {}} loading={notifLoading} onClose={() => setNotifOpen(false)}
                 readIds={readIds} onRead={markRead} onReadAll={markAllRead} unreadCount={unreadCount} />
             </motion.div>
           )}
@@ -317,28 +236,39 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   );
 }
 
-function NotifDropdown({ open, notifs, onClose, readIds, onRead, onReadAll, unreadCount }: any) {
+const GROUPS = [
+  { key: "dat_san", label: "Đặt sân", icon: Calendar },
+  { key: "dich_vu", label: "Dịch vụ & Ca", icon: Package },
+  { key: "danh_gia", label: "Đánh giá", icon: Star },
+] as const;
+
+type GroupKey = (typeof GROUPS)[number]["key"];
+
+function NotifDropdown({ open, ...rest }: any) {
   return (
     <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-          className="absolute right-0 top-full mt-2 w-96 max-w-[calc(100vw-2rem)] z-50">
-          <NotifList notifs={notifs} onClose={onClose}
-            readIds={readIds} onRead={onRead} onReadAll={onReadAll} unreadCount={unreadCount} />
+          className="absolute right-0 top-full mt-2 w-[420px] max-w-[calc(100vw-2rem)] z-50">
+          <NotifList {...rest} />
         </motion.div>
       )}
     </AnimatePresence>
   );
 }
 
-function NotifList({ notifs, onClose, readIds, onRead, onReadAll, unreadCount }: any) {
+function NotifList({ groups, onClose, readIds, onRead, onReadAll, unreadCount, loading }: any) {
+  const [tab, setTab] = useState<GroupKey>("dat_san");
+  const items: any[] = groups[tab] || [];
+  const unreadOf = (key: GroupKey) => (groups[key] || []).filter((n: any) => !readIds.has(n.id)).length;
+
   return (
     <div className="bg-card rounded-3xl border border-border shadow-2xl overflow-hidden">
       <div className="p-4 border-b border-border flex items-center justify-between gap-3">
         <div>
           <h3 className="font-display font-bold text-foreground">Thông báo</h3>
           <p className="text-xs text-muted-foreground">
-            {unreadCount > 0 ? `${unreadCount} chưa đọc • ${notifs.length} tổng` : `${notifs.length} mục • đã đọc hết`}
+            {loading ? "Đang tải..." : unreadCount > 0 ? `${unreadCount} chưa đọc` : "Đã đọc hết"}
           </p>
         </div>
         {unreadCount > 0 ? (
@@ -350,15 +280,43 @@ function NotifList({ notifs, onClose, readIds, onRead, onReadAll, unreadCount }:
           <Bell className="w-5 h-5 text-primary" />
         )}
       </div>
+
+      {/* 3 nhóm: Đặt sân • Dịch vụ & Ca trực • Đánh giá thấp */}
+      <div className="flex gap-1 p-2 bg-secondary/40 border-b border-border">
+        {GROUPS.map((g) => {
+          const n = unreadOf(g.key);
+          const Icon = g.icon;
+          const active = tab === g.key;
+          return (
+            <button key={g.key} onClick={() => setTab(g.key)}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-xs font-semibold transition-all ${
+                active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              }`}>
+              <Icon className="w-3.5 h-3.5" />
+              <span className="truncate">{g.label}</span>
+              {n > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-white text-[10px] font-bold flex items-center justify-center">
+                  {n > 9 ? "9+" : n}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="max-h-96 overflow-y-auto">
-        {notifs.length === 0 ? (
+        {items.length === 0 ? (
           <div className="p-12 text-center">
             <CheckCircle2 className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
-            <p className="text-sm text-muted-foreground">Không có thông báo mới</p>
+            <p className="text-sm text-muted-foreground">
+              {tab === "dat_san" ? "Không có đơn nào cần xử lý"
+                : tab === "dich_vu" ? "Dịch vụ và ca trực đều ổn"
+                : "Không có đánh giá thấp"}
+            </p>
           </div>
         ) : (
           <div className="divide-y divide-border">
-            {notifs.map((n: any) => {
+            {items.map((n: any) => {
               const isRead = readIds.has(n.id);
               return (
                 <div key={n.id}
@@ -376,13 +334,13 @@ function NotifList({ notifs, onClose, readIds, onRead, onReadAll, unreadCount }:
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
                           <span className={`text-foreground text-sm ${isRead ? "font-medium" : "font-bold"}`}>{n.title}</span>
-                          {n.urgent && <AlertCircle className="w-3 h-3 text-destructive" />}
+                          {n.urgent && <AlertCircle className="w-3 h-3 text-destructive shrink-0" />}
                           {!isRead && <span className="w-2 h-2 rounded-full bg-primary shrink-0" />}
                         </div>
                         <p className="text-xs text-muted-foreground line-clamp-2">{n.desc}</p>
                         <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
                           <Clock className="w-3 h-3" />
-                          <span>{new Date(n.time).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                          <span>{new Date(n.time + "Z").toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                         </div>
                       </div>
                     </div>

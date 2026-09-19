@@ -5,6 +5,7 @@ import Navbar from "@/components/Navbar";
 import RescheduleModal from "@/components/RescheduleModal";
 import { apiGet, apiPost, formatVND, formatDate, getUser } from "@/lib/api";
 import { useCountdown } from "@/lib/countdown";
+import { cachedGet, primeFromCache } from "@/lib/useApi";
 import { Calendar, Clock, MapPin, X, Star, AlertCircle, Loader2, RotateCcw, Ban, CheckCircle2, Receipt, CalendarClock, CreditCard, Timer } from "lucide-react";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
@@ -27,17 +28,24 @@ export default function MyBookingsPage() {
   const [rescheduleTarget, setRescheduleTarget] = useState<any>(null);
 
   async function load() {
-    setLoading(true);
+    const u = getUser();
+    const params = new URLSearchParams();
+    if (filter) params.set("trang_thai", filter);
+    if (u && ["ADMIN", "QUAN_LY", "NHAN_VIEN"].includes(u.vai_tro)) {
+      params.set("khach_hang_id", String(u.id));
+    }
+    const key = `/api/bookings?${params}`;
+    // Hiện ngay dữ liệu đã cache (nếu có) rồi vẫn tải lại ngầm — chuyển trang không phải chờ
+    setLoading(!primeFromCache([key, "/api/feedbacks"], (list: any, fbs: any) => {
+      setBookings(list);
+      const m: Record<number, any> = {};
+      for (const f of fbs || []) if (f.booking_id) m[f.booking_id] = f;
+      setFeedbackByBooking(m);
+    }));
     try {
-      const u = getUser();
-      const params = new URLSearchParams();
-      if (filter) params.set("trang_thai", filter);
-      if (u && ["ADMIN", "QUAN_LY", "NHAN_VIEN"].includes(u.vai_tro)) {
-        params.set("khach_hang_id", String(u.id));
-      }
       const [bookingList, feedbacks] = await Promise.all([
-        apiGet(`/api/bookings?${params}`),
-        apiGet("/api/feedbacks").catch(() => []),
+        cachedGet(key),
+        cachedGet("/api/feedbacks").catch(() => []),
       ]);
       setBookings(bookingList);
       // Map booking_id → feedback

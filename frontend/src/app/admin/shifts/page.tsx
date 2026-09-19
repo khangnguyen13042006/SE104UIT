@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { apiGet, apiPost, apiDelete, formatDate, getUser } from "@/lib/api";
 import { Plus, Trash2, X, Loader2, Calendar, ClipboardList, Filter } from "lucide-react";
+import { cachedGet, primeFromCache } from "@/lib/useApi";
 
 const CA_LABEL: Record<string, string> = {
   SANG: "Sáng (6h - 14h)",
@@ -31,9 +32,13 @@ export default function ShiftsAdmin() {
       setUser(u);
       if (u && ["ADMIN", "QUAN_LY"].includes(u.vai_tro)) {
         try {
+          primeFromCache(["/api/users?vai_tro=NHAN_VIEN", "/api/fields"], (s: any, f: any) => {
+            setStaff(Array.isArray(s) ? s : []);
+            setFields(Array.isArray(f) ? f : []);
+          });
           const [sData, fData] = await Promise.all([
-            apiGet("/api/users?vai_tro=NHAN_VIEN"),
-            apiGet("/api/fields")
+            cachedGet("/api/users?vai_tro=NHAN_VIEN"),
+            cachedGet("/api/fields")
           ]);
           setStaff(Array.isArray(sData) ? sData : []);
           setFields(Array.isArray(fData) ? fData : []);
@@ -48,15 +53,17 @@ export default function ShiftsAdmin() {
 
   // Hàm tải ca trực dựa trên bộ lọc
   async function loadShifts() {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      // Nếu không có filterTuNgay/filterDenNgay, API sẽ tự động trả về TẤT CẢ
-      if (filterTuNgay) params.set("tu_ngay", filterTuNgay);
-      if (filterDenNgay) params.set("den_ngay", filterDenNgay);
-      if (filterNv) params.set("nhan_vien_id", filterNv);
+    const params = new URLSearchParams();
+    // Nếu không có filterTuNgay/filterDenNgay, API sẽ tự động trả về TẤT CẢ
+    if (filterTuNgay) params.set("tu_ngay", filterTuNgay);
+    if (filterDenNgay) params.set("den_ngay", filterDenNgay);
+    if (filterNv) params.set("nhan_vien_id", filterNv);
 
-      const data = await apiGet(`/api/shifts?${params.toString()}`);
+    const key = `/api/shifts?${params.toString()}`;
+    // Hiện ngay dữ liệu đã cache (nếu có) rồi vẫn tải lại ngầm — chuyển trang không phải chờ
+    setLoading(!primeFromCache([key], (d: any) => setList(Array.isArray(d) ? d : [])));
+    try {
+      const data = await cachedGet(key);
       setList(Array.isArray(data) ? data : []);
     } catch (e: any) {
       alert(e.message);

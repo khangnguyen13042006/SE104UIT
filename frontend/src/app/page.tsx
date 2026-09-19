@@ -4,7 +4,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
-import HeroPitch3D from "@/components/HeroPitch3D";
+import dynamic from "next/dynamic";
+
+// Hero 3D dùng three.js — tải riêng để phần nội dung chính hiện ra ngay
+const HeroPitch3D = dynamic(() => import("@/components/HeroPitch3D"), {
+  ssr: false,
+  loading: () => <div className="w-full h-full rounded-3xl bg-secondary/30 animate-pulse" />,
+});
 import { getUser } from "@/lib/api";
 import { 
   ArrowRight, Calendar, Clock, Shield, Star, 

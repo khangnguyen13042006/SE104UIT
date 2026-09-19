@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { apiGet, formatDateTime } from "@/lib/api";
+import { cachedGet, primeFromCache } from "@/lib/useApi";
 import { Star, Loader2, AlertTriangle, MessageSquare, TrendingUp, Filter, ArrowUpDown } from "lucide-react";
 
 type SortOption = "newest" | "oldest" | "highest" | "lowest";
@@ -14,16 +15,21 @@ export default function FeedbacksAdmin() {
   const [loading, setLoading] = useState(true);
 
   async function load() {
-    setLoading(true);
+    const params = new URLSearchParams();
+    if (starFilter) {
+      params.set("min_star", starFilter);
+      params.set("max_star", starFilter);
+    }
+    const key = `/api/feedbacks?${params}`;
+    // Hiện ngay dữ liệu đã cache (nếu có) rồi vẫn tải lại ngầm — chuyển trang không phải chờ
+    setLoading(!primeFromCache([key, "/api/feedbacks/stats"], (items: any, st: any) => {
+      setList(items);
+      setStats(st);
+    }));
     try {
-      const params = new URLSearchParams();
-      if (starFilter) {
-        params.set("min_star", starFilter);
-        params.set("max_star", starFilter);
-      }
       const [items, s] = await Promise.all([
-        apiGet(`/api/feedbacks?${params}`),
-        apiGet("/api/feedbacks/stats").catch(() => null),
+        cachedGet(key),
+        cachedGet("/api/feedbacks/stats").catch(() => null),
       ]);
       setList(items);
       setStats(s);

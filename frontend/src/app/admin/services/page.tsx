@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { apiGet, apiPost, apiPut, formatVND } from "@/lib/api";
+import { cachedGet, primeFromCache } from "@/lib/useApi";
 import { Plus, Edit2, X, Loader2, Recycle, Package, Search } from "lucide-react";
 
 // Bỏ dấu tiếng Việt để tìm kiếm không phân biệt dấu/hoa thường
@@ -44,8 +45,9 @@ export default function ServicesAdmin() {
   const selCls = "px-3 py-2.5 rounded-xl border border-border bg-card text-sm text-foreground outline-none focus:border-primary";
 
   async function load() {
-    setLoading(true);
-    try { setList(await apiGet("/api/services")); }
+    // Hiện ngay dữ liệu đã cache (nếu có) rồi vẫn tải lại ngầm — chuyển trang không phải chờ
+    setLoading(!primeFromCache(["/api/services"], (r: any) => setList(r)));
+    try { setList(await cachedGet("/api/services")); }
     finally { setLoading(false); }
   }
   useEffect(() => { load(); }, []);

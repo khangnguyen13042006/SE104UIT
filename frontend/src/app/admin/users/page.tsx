@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
+import { cachedGet, primeFromCache } from "@/lib/useApi";
 import { Plus, Edit2, X, Loader2, Search, Users as UsersIcon } from "lucide-react";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -24,12 +25,14 @@ export default function UsersAdmin() {
   const [creating, setCreating] = useState(false);
 
   async function load() {
-    setLoading(true);
+    const params = new URLSearchParams();
+    if (filter) params.set("vai_tro", filter);
+    if (keyword) params.set("keyword", keyword);
+    const key = `/api/users?${params}`;
+    // Hiện ngay dữ liệu đã cache (nếu có) rồi vẫn tải lại ngầm — chuyển trang không phải chờ
+    setLoading(!primeFromCache([key], (r: any) => setList(r)));
     try {
-      const params = new URLSearchParams();
-      if (filter) params.set("vai_tro", filter);
-      if (keyword) params.set("keyword", keyword);
-      const r = await apiGet(`/api/users?${params}`);
+      const r = await cachedGet(key);
       setList(r);
     } finally { setLoading(false); }
   }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import RescheduleModal from "@/components/RescheduleModal";
+import { cachedGet, primeFromCache } from "@/lib/useApi";
 import { apiGet, apiPost, apiDelete, formatVND, formatDate, getUser } from "@/lib/api";
 import {
   Loader2, CheckCircle2, DollarSign, Search, X, Clock, XCircle,
@@ -44,7 +45,13 @@ export default function BookingsAdmin() {
   const isManager = user && ["ADMIN", "QUAN_LY"].includes(user.vai_tro);
 
   async function load() {
-    setLoading(true);
+    // Hiện ngay dữ liệu đã cache (nếu có) rồi vẫn tải lại ngầm — chuyển trang không phải chờ
+    const primed = primeFromCache(["/api/bookings", "/api/services"], (bData: any, sData: any) => {
+      setUser(getUser());
+      setList(Array.isArray(bData) ? bData : []);
+      setAllServices(Array.isArray(sData) ? sData : (sData?.data || []));
+    });
+    setLoading(!primed);
     try {
       // 1. Lấy thông tin user hiện tại
       const currentUser = getUser();
@@ -59,8 +66,8 @@ export default function BookingsAdmin() {
 
       const [, bData, sData] = await Promise.all([
         runAutoTasks,
-        apiGet("/api/bookings"),
-        apiGet("/api/services"),
+        cachedGet("/api/bookings"),
+        cachedGet("/api/services"),
       ]);
       setList(Array.isArray(bData) ? bData : []);
       setAllServices(Array.isArray(sData) ? sData : (sData?.data || []));

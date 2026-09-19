@@ -3,8 +3,16 @@ import { useEffect, useMemo, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "@/components/Navbar";
-import Field3DShowcase, { Field } from "@/components/Field3DShowcase";
+import dynamic from "next/dynamic";
+import type { Field } from "@/components/Field3DShowcase";
+
+// three.js nặng (~600KB) — tải riêng sau khi trang đã hiển thị để chuyển trang không bị chậm
+const Field3DShowcase = dynamic(() => import("@/components/Field3DShowcase"), {
+  ssr: false,
+  loading: () => <div className="h-[320px] rounded-3xl bg-secondary/40 animate-pulse" />,
+});
 import { apiGet, apiPost, formatVND, getUser } from "@/lib/api";
+import { cachedGet } from "@/lib/useApi";
 import { 
   AlertCircle, CheckCircle2, MapPin, Phone, User, Mail, 
   Wifi, Loader2, Clock, Users, Zap, ChevronRight,

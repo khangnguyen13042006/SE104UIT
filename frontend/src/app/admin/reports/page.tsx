@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { apiGet, formatVND } from "@/lib/api";
+import { cachedGet, primeFromCache } from "@/lib/useApi";
 import { Loader2, Calendar, TrendingUp, Award, Clock } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -21,15 +22,19 @@ export default function ReportsAdmin() {
   const [loading, setLoading] = useState(true);
 
   async function load() {
-    setLoading(true);
+    const q = `tu_ngay=${tuNgay}&den_ngay=${denNgay}`;
+    const keys = [
+      `/api/reports/revenue?${q}&nhom_theo=${nhomTheo}`,
+      `/api/reports/field-ranking?${q}`,
+      `/api/reports/peak-hours?${q}`,
+      `/api/reports/summary?${q}`,
+    ];
+    // Hiện ngay dữ liệu đã cache (nếu có) rồi vẫn tải lại ngầm — chuyển trang không phải chờ
+    setLoading(!primeFromCache(keys, (r: any, rk: any, p: any, s: any) => {
+      setRev(r); setRank(rk); setPeak(p); setSum(s);
+    }));
     try {
-      const q = `tu_ngay=${tuNgay}&den_ngay=${denNgay}`;
-      const [r, rk, p, s] = await Promise.all([
-        apiGet(`/api/reports/revenue?${q}&nhom_theo=${nhomTheo}`),
-        apiGet(`/api/reports/field-ranking?${q}`),
-        apiGet(`/api/reports/peak-hours?${q}`),
-        apiGet(`/api/reports/summary?${q}`),
-      ]);
+      const [r, rk, p, s] = await Promise.all(keys.map((k) => cachedGet(k)));
       setRev(r); setRank(rk); setPeak(p); setSum(s);
     } catch (e: any) {
       alert(e.message);

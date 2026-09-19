@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { apiGet, apiPost, apiPut, formatVND } from "@/lib/api";
+import { cachedGet, primeFromCache } from "@/lib/useApi";
 import { Plus, Edit2, X, Loader2, MapPin } from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -15,9 +16,10 @@ export default function FieldsAdmin() {
   const [creating, setCreating] = useState(false);
 
   async function load() {
-    setLoading(true);
+    // Hiện ngay dữ liệu đã cache (nếu có) rồi vẫn tải lại ngầm — chuyển trang không phải chờ
+    setLoading(!primeFromCache(["/api/fields"], (r: any) => setList(r)));
     try {
-      const r = await apiGet("/api/fields");
+      const r = await cachedGet("/api/fields");
       setList(r);
     } finally {
       setLoading(false);
