@@ -79,16 +79,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         await Promise.all(tasks);
 
       const items: any[] = [];
-      (pendingBookings || []).slice(0, 10).forEach((b: any) => {
+      // Đơn khách đã báo chuyển khoản (cần duyệt gấp) lên đầu để không bị cắt khỏi danh sách
+      [...(pendingBookings || [])]
+        .sort((x: any, y: any) => (y.khach_bao_chuyen_khoan ? 1 : 0) - (x.khach_bao_chuyen_khoan ? 1 : 0))
+        .slice(0, 10)
+        .forEach((b: any) => {
+        const claimed = !!b.khach_bao_chuyen_khoan;
+        const due = parseFloat(b.invoice?.so_tien_can_tt || 0) || parseFloat(b.tien_san);
         items.push({
-          id: `b-${b.id}-${b.ngay_tao}`,
+          id: `b-${b.id}-${b.ngay_tao}-${b.khach_bao_chuyen_khoan || ""}`,
           type: "booking",
-          icon: "📅",
-          title: `Booking chờ xác nhận`,
-          desc: `${b.ten_san} • ${b.ten_khach || "khách"} • ${formatVND(b.tien_san)}`,
-          time: b.ngay_tao,
+          icon: claimed ? "💬" : "📅",
+          title: claimed ? "Khách báo đã chuyển khoản" : "Booking chờ xác nhận",
+          desc: claimed
+            ? `${b.ma_dat_san} • ${b.ten_khach || "khách"} • ${formatVND(due)} — cần kiểm tra & xác nhận`
+            : `${b.ten_san} • ${b.ten_khach || "khách"} • ${formatVND(b.tien_san)}`,
+          time: claimed ? b.khach_bao_chuyen_khoan + "Z" : b.ngay_tao,
           href: "/admin/bookings",
-          urgent: false,
+          urgent: claimed,
         });
       });
       (badFeedbacks || []).slice(0, 5).forEach((f: any) => {

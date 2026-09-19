@@ -21,37 +21,29 @@ def payment_deadline(b: Booking) -> datetime:
 
 
 def amount_paid(b: Booking) -> Decimal:
-    """Số tiền khách đã thực sự thanh toán cho đơn.
-    Ưu tiên cột so_tien_da_tt; với hóa đơn cũ (NULL) thì suy ra từ trạng thái hóa đơn/đơn."""
+    """Số tiền khách đã thanh toán cho đơn.
+    - Đơn ĐÃ XÁC NHẬN / ĐANG DÙNG / HOÀN THÀNH = đã thanh toán đủ hóa đơn.
+    - Đơn CHỜ XÁC NHẬN = chưa thanh toán đủ; chỉ có thể đã trả một phần (số tiền đã trả trước khi đổi lịch sang giờ đắt hơn).
+    - Đơn ĐÃ HỦY: số tiền đã chốt lúc hủy (so_tien_da_tt), hóa đơn rất cũ thì suy ra từ trạng thái hoàn tiền."""
     inv = b.invoice
     if not inv:
         return Decimal(0)
+    if b.trang_thai in (BookingStatus.DA_XAC_NHAN, BookingStatus.DANG_SU_DUNG, BookingStatus.HOAN_THANH):
+        return Decimal(inv.tong_cong)
     if inv.so_tien_da_tt is not None:
         return Decimal(inv.so_tien_da_tt)
     if inv.trang_thai in (PaymentStatus.DA_THANH_TOAN, PaymentStatus.CHO_HOAN_TIEN, PaymentStatus.HOAN_TIEN):
-        return Decimal(inv.tong_cong)
-    # Đơn online cũ đã được xác nhận (khách tự đặt) → coi như đã thanh toán đủ
-    if (
-        b.khach_hang_id is not None
-        and b.nguoi_tao_id == b.khach_hang_id
-        and b.trang_thai in (BookingStatus.DA_XAC_NHAN, BookingStatus.DANG_SU_DUNG, BookingStatus.HOAN_THANH)
-    ):
         return Decimal(inv.tong_cong)
     return Decimal(0)
 
 
 def payment_due(b: Booking) -> Decimal:
-    """Số tiền khách còn phải thanh toán online:
-    - Đơn CHỜ XÁC NHẬN: toàn bộ hóa đơn chưa trả.
-    - Đơn ĐÃ XÁC NHẬN: phần chênh lệch sau khi đổi lịch sang giờ đắt hơn (nếu có)."""
+    """Số tiền khách còn phải thanh toán. Chỉ đơn CHỜ XÁC NHẬN mới còn nợ:
+    toàn bộ hóa đơn (đặt mới) hoặc phần chênh lệch (đã đổi lịch sang giờ đắt hơn)."""
     inv = b.invoice
-    if not inv:
+    if not inv or b.trang_thai != BookingStatus.CHO_XAC_NHAN:
         return Decimal(0)
-    if b.trang_thai == BookingStatus.CHO_XAC_NHAN:
-        return max(Decimal(0), Decimal(inv.tong_cong) - amount_paid(b))
-    if b.trang_thai == BookingStatus.DA_XAC_NHAN:
-        return max(Decimal(0), Decimal(inv.chenh_lech_cho_tt or 0))
-    return Decimal(0)
+    return max(Decimal(0), Decimal(inv.tong_cong) - amount_paid(b))
 
 
 def mark_invoice_paid(b: Booking) -> None:
@@ -59,8 +51,8 @@ def mark_invoice_paid(b: Booking) -> None:
     if b.invoice:
         b.invoice.trang_thai = PaymentStatus.DA_THANH_TOAN
         b.invoice.so_tien_da_tt = b.invoice.tong_cong
-        b.invoice.chenh_lech_cho_tt = Decimal(0)
     b.han_thanh_toan = None
+    b.khach_bao_chuyen_khoan = None
 
 
 def generate_code(prefix: str = "BK") -> str:

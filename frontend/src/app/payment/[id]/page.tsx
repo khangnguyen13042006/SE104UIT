@@ -83,9 +83,7 @@ export default function PaymentPage() {
       }
 
       // Chỉ áp dụng cho lần thanh toán đầu; thanh toán chênh lệch sau đổi lịch là một lần thanh toán mới
-      if (b.trang_thai === "CHO_XAC_NHAN" && b.ghi_chu && b.ghi_chu.includes("KHÁCH BÁO ĐÃ CHUYỂN KHOẢN")) {
-        setClaimed(true);
-      }
+      setClaimed(b.trang_thai === "CHO_XAC_NHAN" && !!b.khach_bao_chuyen_khoan);
     } catch (e: any) {
       setErr(e.message);
     } finally {
@@ -211,8 +209,8 @@ export default function PaymentPage() {
   const tong = Math.round(parseFloat(invoice?.tong_cong || 0));
   const due = Math.round(parseFloat(invoice?.so_tien_can_tt || 0));
   const paidAmt = Math.round(parseFloat(invoice?.so_tien_da_tt || 0));
-  // Đổi lịch sang giờ đắt hơn: đơn đã xác nhận nhưng còn phải trả phần chênh lệch
-  const isDiffMode = booking.trang_thai === "DA_XAC_NHAN" && due > 0;
+  // Đổi lịch sang giờ đắt hơn: đơn về "Chờ xác nhận", đã trả một phần và còn phải trả phần chênh lệch
+  const isDiffMode = booking.trang_thai === "CHO_XAC_NHAN" && paidAmt > 0 && due > 0;
   const amount = due > 0 ? due : tong;
   const isCancelled = booking.trang_thai === "HUY";
   const isExpired = booking.trang_thai === "CHO_XAC_NHAN" && cd.active && cd.expired;
@@ -633,9 +631,9 @@ export default function PaymentPage() {
               </div>
             ) : (
               <div className="mt-6 p-4 rounded-2xl bg-accent/10 border border-accent/20 text-center">
-                <p className="text-sm font-semibold text-accent mb-1">Đã ghi nhận thông báo chuyển khoản thủ công</p>
+                <p className="text-sm font-semibold text-accent mb-1">Đã ghi nhận — đơn đang chờ nhân viên xác nhận</p>
                 <p className="text-xs text-muted-foreground">
-                  Nhân viên đang tiến hành kiểm tra giao dịch của bạn. Bạn cũng có thể tải ảnh biên lai ở trên để
+                  Admin, quản lý và nhân viên đã được thông báo để kiểm tra giao dịch của bạn. Bạn cũng có thể tải ảnh biên lai ở trên để
                   kích hoạt sân ngay tức thì mà không cần đợi.
                 </p>
               </div>

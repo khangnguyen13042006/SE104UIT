@@ -146,6 +146,35 @@ def send_refund_completed_email(
     _send(to_email, f"Đã hoàn tiền đơn {ma_dat_san}", html)
 
 
+def send_payment_claim_staff_email(
+    to_emails: list,
+    ma_dat_san: str,
+    ten_khach: str,
+    ten_san: str,
+    ngay_dat: date,
+    gio_bat_dau: time,
+    gio_ket_thuc: time,
+    so_tien: Union[Decimal, float, int],
+) -> None:
+    """Báo cho Admin/Quản lý/Nhân viên: khách báo đã chuyển khoản, cần vào kiểm tra và xác nhận đơn."""
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color:#1a1a1a;">
+      <h2 style="color:#f59e0b;">Khách báo đã chuyển khoản — cần xác nhận</h2>
+      <p>Khách vừa báo đã thanh toán nhưng không gửi ảnh biên lai, vui lòng kiểm tra giao dịch và xác nhận đơn:</p>
+      <table style="width:100%; border-collapse: collapse; margin: 16px 0;">
+        <tr><td style="padding:6px 0; color:#888;">Mã đặt sân</td><td style="padding:6px 0; text-align:right; font-weight:bold;">{ma_dat_san}</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Khách</td><td style="padding:6px 0; text-align:right;">{ten_khach}</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Sân</td><td style="padding:6px 0; text-align:right;">{ten_san}</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Lịch</td><td style="padding:6px 0; text-align:right;">{ngay_dat.strftime('%d/%m/%Y')} {gio_bat_dau.strftime('%H:%M')}-{gio_ket_thuc.strftime('%H:%M')}</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Số tiền khách báo đã chuyển</td><td style="padding:6px 0; text-align:right; font-weight:bold;">{int(so_tien):,}đ</td></tr>
+      </table>
+      <p style="color:#888; font-size: 12px;">Vào trang quản trị → Lịch Đặt Sân để xác nhận đơn.</p>
+    </div>
+    """
+    for addr in dict.fromkeys(to_emails or []):
+        _send(addr, f"[Cần xác nhận] Khách báo đã chuyển khoản đơn {ma_dat_san}", html)
+
+
 def send_booking_rescheduled_email(
     to_email: Optional[str],
     ma_dat_san: str,

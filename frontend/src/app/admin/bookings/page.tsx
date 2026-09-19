@@ -266,7 +266,12 @@ export default function BookingsAdmin() {
                           {STATUS_LABEL[b.trang_thai]?.text}
                         </span>
                         
-                        {b.trang_thai === "DA_XAC_NHAN" && parseFloat(b.invoice?.so_tien_can_tt || 0) > 0 && (
+                        {b.trang_thai === "CHO_XAC_NHAN" && b.khach_bao_chuyen_khoan && (
+                          <span className="text-[9px] font-bold text-orange-700 bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200 mt-1 whitespace-nowrap">
+                            💬 Khách báo đã chuyển khoản — cần xác nhận
+                          </span>
+                        )}
+                        {b.trang_thai === "CHO_XAC_NHAN" && parseFloat(b.invoice?.so_tien_da_tt || 0) > 0 && (
                           <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200 mt-1 whitespace-nowrap">
                             ⏳ Chờ thanh toán chênh lệch {formatVND(b.invoice.so_tien_can_tt)}
                           </span>
@@ -512,18 +517,18 @@ export default function BookingsAdmin() {
                 className="w-full p-4 rounded-2xl bg-secondary/50 border border-border outline-none min-h-[100px] mb-4 focus:border-red-500 transition-all font-medium shadow-inner" 
               />
 
-              {/* MỨC HOÀN TIỀN: tự động theo mốc 24h; Admin/Quản lý có thêm lựa chọn "lỗi từ sân" (100%) */}
+              {/* 2 LỰA CHỌN: do khách hủy (tự động theo mốc 24h) / do sân hủy (hoàn 100%) */}
               <div className="space-y-2 mb-4">
                 <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border ${refundChoice === "policy" ? "border-red-300 bg-red-50/50" : "border-border hover:bg-secondary/50"}`}>
                   <input type="radio" checked={refundChoice === "policy"} onChange={() => setRefundChoice("policy")}
                     className="w-4 h-4 mt-0.5 accent-red-600" />
                   <div>
-                    <div className="text-sm font-bold text-foreground">Theo chính sách hủy sân (tự động)</div>
+                    <div className="text-sm font-bold text-foreground">Do khách hủy</div>
                     <div className="text-xs text-muted-foreground mt-0.5">
                       Hủy <strong>trước {cancelCutoffText}</strong> (cách giờ đá ≥ 24h) hoàn 50%; sau mốc này không hoàn.
                       Còn {Math.max(0, cancelHoursUntil).toFixed(1)}h tới giờ đá →{" "}
                       <strong className={cancelHoursUntil >= 24 ? "text-emerald-600" : "text-red-600"}>
-                        {cancelHoursUntil >= 24 ? "được hoàn 50%" : "không hoàn tiền"}
+                        {cancelHoursUntil >= 24 ? "hoàn 50%" : "không hoàn tiền"}
                       </strong>.
                     </div>
                   </div>
@@ -533,8 +538,8 @@ export default function BookingsAdmin() {
                     <input type="radio" checked={refundChoice === "venue_fault"} onChange={() => setRefundChoice("venue_fault")}
                       className="w-4 h-4 mt-0.5 accent-orange-600" />
                     <div>
-                      <div className="text-sm font-bold text-orange-700">Lỗi từ phía sân (hoàn 100%)</div>
-                      <div className="text-xs text-orange-700/80 mt-0.5">Sự cố/hỏng hóc từ sân — hoàn toàn bộ, bất kể thời điểm hủy.</div>
+                      <div className="text-sm font-bold text-orange-700">Do sân hủy (hoàn 100%)</div>
+                      <div className="text-xs text-orange-700/80 mt-0.5">Sự cố/hỏng hóc/bảo trì từ phía sân — hoàn toàn bộ, bất kể thời điểm hủy.</div>
                     </div>
                   </label>
                 )}
@@ -542,12 +547,12 @@ export default function BookingsAdmin() {
 
               <div className="mb-6 p-3 rounded-xl bg-secondary/50 text-xs">
                 {cancelPaid <= 0 ? (
-                  <span className="text-muted-foreground">Đơn này <strong>chưa thanh toán</strong> nên không phát sinh khoản hoàn tiền.</span>
+                  <span className="text-muted-foreground">Đơn đang <strong>chờ xác nhận (chưa thanh toán)</strong> nên không phát sinh khoản hoàn tiền.</span>
                 ) : cancelWillRefund ? (
                   <span className="text-muted-foreground">
                     Đã thanh toán {formatVND(cancelPaid)} → hoàn <strong className="text-foreground">{Math.round(cancelRate * 100)}% = {formatVND(cancelPaid * cancelRate)}</strong>.
-                    Hệ thống gửi email cho khách hướng dẫn vào mục "Lịch đặt của tôi" để cung cấp thông tin nhận hoàn tiền
-                    (Số tài khoản, Tên chủ tài khoản, Ngân hàng).
+                    Sau khi hủy, hệ thống <strong>gửi email và hiện yêu cầu tại "Lịch đặt của tôi"</strong> để khách nhập
+                    thông tin nhận hoàn tiền (Số tài khoản, Tên chủ tài khoản, Ngân hàng).
                   </span>
                 ) : (
                   <span className="text-muted-foreground">Đã thanh toán {formatVND(cancelPaid)} nhưng đã qua mốc hoàn tiền → <strong className="text-red-600">không hoàn</strong>.</span>

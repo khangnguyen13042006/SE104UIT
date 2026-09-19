@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.core.config import BookingStatus, PaymentStatus, PAYMENT_WINDOW_MINUTES
 from app.models import Booking, User, Field, Service
-from app.utils.helpers import payment_deadline
+from app.utils.helpers import payment_deadline, amount_paid
 
 SCAN_INTERVAL_SECONDS = 60 
 
@@ -29,7 +29,8 @@ def cancel_expired_unpaid(db: Session, commit: bool = True) -> int:
     pending = db.query(Booking).filter(Booking.trang_thai == BookingStatus.CHO_XAC_NHAN).all()
     count = 0
     for b in pending:
-        if payment_deadline(b) > now_utc:
+        # Không hủy đơn khách đã báo chuyển khoản (đang chờ nhân viên duyệt) hoặc đã trả một phần (chờ bù chênh lệch đổi lịch)
+        if payment_deadline(b) > now_utc or b.khach_bao_chuyen_khoan or amount_paid(b) > 0:
             continue
         b.trang_thai = BookingStatus.HUY
         b.ly_do_huy = f"Hệ thống tự động hủy đơn do quá {PAYMENT_WINDOW_MINUTES} phút chưa thanh toán."

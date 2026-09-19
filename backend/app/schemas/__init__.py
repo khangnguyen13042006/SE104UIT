@@ -218,7 +218,8 @@ class BookingOut(BaseModel):
     da_doi_lich: bool = False
     ngay_doi_lich_gan_nhat: Optional[datetime] = None
     ngay_tao: datetime
-    han_thanh_toan: Optional[datetime] = None  # hạn thanh toán (UTC) — chỉ có khi đơn đang chờ thanh toán
+    han_thanh_toan: Optional[datetime] = None  # hạn thanh toán (UTC) — chỉ có khi đơn đang chờ thanh toán lần đầu
+    khach_bao_chuyen_khoan: Optional[datetime] = None  # khách đã báo chuyển khoản, đang chờ nhân viên xác nhận
     services: List[BookingServiceOut] = []
     invoice: Optional[InvoiceSummary] = None
 

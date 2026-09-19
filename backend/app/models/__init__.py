@@ -85,6 +85,7 @@ class Booking(Base):
     da_doi_lich = Column(Boolean, nullable=False, default=False)  # đã từng đổi lịch chưa
     ngay_doi_lich_gan_nhat = Column(DateTime, nullable=True)  # thời điểm đổi lịch gần nhất
     nguoi_tao_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # ai tạo booking (NV hay khách)
+    khach_bao_chuyen_khoan = Column(DateTime, nullable=True)  # lúc khách bấm "đã chuyển khoản, chờ nhân viên xác nhận"
     han_thanh_toan = Column(DateTime, nullable=True)  # hạn thanh toán (UTC) cho đơn CHO_XAC_NHAN; NULL = dùng ngay_tao + PAYMENT_WINDOW
     ngay_tao = Column(DateTime, default=datetime.utcnow)
 
@@ -148,7 +149,6 @@ class Invoice(Base):
     hinh_thuc_thanh_toan = Column(SQLEnum(PaymentMethod), nullable=False)
     trang_thai = Column(SQLEnum(PaymentStatus), nullable=False, default=PaymentStatus.CHUA_THANH_TOAN)
     so_tien_da_tt = Column(Numeric(12, 2), nullable=True)  # số tiền khách đã thanh toán thực tế; NULL = hóa đơn cũ (suy ra từ trạng thái)
-    chenh_lech_cho_tt = Column(Numeric(12, 2), nullable=True)  # chênh lệch khách còn phải trả thêm sau khi đổi lịch sang giờ đắt hơn
     ngay_xuat = Column(DateTime, default=datetime.utcnow)
 
     booking = relationship("Booking", back_populates="invoice")

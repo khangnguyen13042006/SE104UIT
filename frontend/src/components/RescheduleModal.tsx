@@ -271,8 +271,8 @@ export default function RescheduleModal({ booking, onClose, onSuccess }: Props) 
                       </div>
                       <p className="text-xs mt-1 opacity-80">
                         {isStaff
-                          ? "Sau khi xác nhận, hệ thống cập nhật hóa đơn và gửi email yêu cầu khách thanh toán khoản chênh lệch này."
-                          : "Sau khi xác nhận, bạn sẽ được chuyển tới trang thanh toán để chuyển khoản phần chênh lệch."}
+                          ? "Sau khi xác nhận, hệ thống cập nhật hóa đơn, đưa đơn về trạng thái Chờ xác nhận và gửi email yêu cầu khách thanh toán khoản chênh lệch này. Khách thanh toán xong đơn sẽ trở lại Đã xác nhận."
+                          : "Sau khi xác nhận, đơn chuyển sang Chờ xác nhận và bạn được đưa tới trang thanh toán phần chênh lệch. Thanh toán xong đơn sẽ trở lại Đã xác nhận."}
                       </p>
                     </div>
                   ) : (

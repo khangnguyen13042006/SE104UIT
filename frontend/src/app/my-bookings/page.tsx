@@ -355,28 +355,34 @@ function RefundStatusBox({ booking, onUpdated }: { booking: any; onUpdated: () =
 function PayBanner({ b, onPay, onExpired }: { b: any; onPay: () => void; onExpired: () => void }) {
   const due = parseFloat(b.invoice?.so_tien_can_tt || 0);
   const pending = b.trang_thai === "CHO_XAC_NHAN";
-  const cd = useCountdown(pending ? b.han_thanh_toan : null);
+  const partial = parseFloat(b.invoice?.so_tien_da_tt || 0) > 0; // đã trả một phần → đang nợ chênh lệch do đổi lịch
+  const claimed = !!b.khach_bao_chuyen_khoan; // khách đã báo chuyển khoản, chờ nhân viên duyệt
+  const cd = useCountdown(pending && !claimed ? b.han_thanh_toan : null);
 
   // Hết hạn → làm mới danh sách để hiển thị đơn đã bị hệ thống tự hủy
   useEffect(() => {
-    if (pending && cd.active && cd.expired) {
+    if (pending && !claimed && cd.active && cd.expired) {
       const t = setTimeout(onExpired, 3000);
       return () => clearTimeout(t);
     }
-  }, [pending, cd.active, cd.expired]);
+  }, [pending, claimed, cd.active, cd.expired]);
 
-  if (due <= 0 || !["CHO_XAC_NHAN", "DA_XAC_NHAN"].includes(b.trang_thai)) return null;
+  if (due <= 0 || !pending) return null;
 
   return (
     <div className="mb-3 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex flex-wrap items-center gap-3">
       <div className="flex-1 min-w-[200px]">
         <div className="flex items-center gap-1.5 font-bold text-sm">
           <CreditCard size={15} />
-          {pending ? "Vui lòng thanh toán để giữ sân" : "Cần thanh toán chênh lệch do đổi lịch"}
+          {claimed
+            ? "Đã báo chuyển khoản — chờ nhân viên xác nhận"
+            : partial
+            ? "Cần thanh toán chênh lệch do đổi lịch"
+            : "Vui lòng thanh toán để giữ sân"}
         </div>
         <div className="text-xs mt-1">
           Số tiền: <strong>{formatVND(due)}</strong>
-          {pending && cd.active && (
+          {pending && !claimed && cd.active && (
             <>
               {" • "}
               {cd.expired ? (
@@ -390,13 +396,22 @@ function PayBanner({ b, onPay, onExpired }: { b: any; onPay: () => void; onExpir
           )}
         </div>
       </div>
-      {!(pending && cd.expired) && (
+      {claimed ? (
         <button
-          onClick={onPay}
-          className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold transition"
+          disabled
+          className="px-4 py-2 rounded-lg bg-slate-200 text-slate-600 text-sm font-bold cursor-not-allowed"
         >
-          Thanh toán ngay
+          Chờ xác nhận
         </button>
+      ) : (
+        !(pending && cd.expired) && (
+          <button
+            onClick={onPay}
+            className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold transition"
+          >
+            Thanh toán ngay
+          </button>
+        )
       )}
     </div>
   );
@@ -546,7 +561,7 @@ function CancelModal({ booking, onClose, onSuccess }: any) {
         <AlertCircle size={16} className="shrink-0 mt-0.5" />
         <div>
           {paid <= 0 ? (
-            <>Đơn này chưa thanh toán nên không phát sinh khoản hoàn tiền.</>
+            <>Đơn đang chờ xác nhận (chưa thanh toán) nên không phát sinh khoản hoàn tiền.</>
           ) : willRefund ? (
             <>
               Còn {hoursUntil.toFixed(1)}h trước giờ chơi (mốc hoàn tiền: trước <strong>{cutoffText}</strong>) — được hoàn{" "}
