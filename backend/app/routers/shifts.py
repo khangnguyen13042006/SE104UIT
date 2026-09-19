@@ -4,7 +4,7 @@ from typing import List, Optional
 from datetime import date, timedelta
 from app.core.database import get_db
 from app.core.security import get_current_user, require_roles
-from app.core.config import UserRole, UserStatus
+from app.core.config import UserRole, UserStatus, DEFAULT_LUONG_CA
 from app.models import Shift, User
 from app.schemas import ShiftCreate, ShiftOut
 
@@ -96,6 +96,7 @@ def create_shift(
         ca_truc=payload.ca_truc,
         san_phu_trach=san_str,
         ghi_chu=payload.ghi_chu,
+        luong_ca=nv.luong_ca if nv.luong_ca is not None else DEFAULT_LUONG_CA,
     )
     db.add(shift)
     db.commit()

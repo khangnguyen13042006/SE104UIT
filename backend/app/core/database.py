@@ -71,6 +71,13 @@ def get_db():
 # Dự án không dùng Alembic. Base.metadata.create_all() chỉ tạo BẢNG MỚI, không tự thêm CỘT MỚI
 # vào bảng đã tồn tại — nên mỗi khi model có thêm cột, phải khai báo ở đây để tự "vá" schema cũ.
 TABLE_MIGRATIONS: dict[str, dict[str, str]] = {
+    "users": {
+        "luong_ca": "integer",
+        "tinh_trang_lam_viec": "varchar(20)",
+    },
+    "shifts": {
+        "luong_ca": "integer",
+    },
     "bookings": {
         "ty_le_hoan_tien": "float",
         "ngay_huy": "datetime",

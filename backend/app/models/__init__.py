@@ -8,7 +8,7 @@ from app.core.database import Base
 from app.core.config import (
     UserRole, UserStatus, FieldType, FieldStatus,
     BookingStatus, PaymentMethod, PaymentStatus,
-    MembershipType, ServiceStatus, ShiftType
+    MembershipType, ServiceStatus, ShiftType, DEFAULT_LUONG_CA
 )
 
 
@@ -22,6 +22,9 @@ class User(Base):
     vai_tro = Column(SQLEnum(UserRole), nullable=False, default=UserRole.KHACH_HANG)
     trang_thai = Column(SQLEnum(UserStatus), nullable=False, default=UserStatus.HOAT_DONG)
     ngay_tao = Column(DateTime, default=datetime.utcnow)
+    # Chỉ dùng cho NHAN_VIEN: lương hiện hành mỗi ca (VND) và tình trạng làm việc (DANG_LAM/TAM_NGHI/DA_NGHI)
+    luong_ca = Column(Integer, nullable=True, default=DEFAULT_LUONG_CA)
+    tinh_trang_lam_viec = Column(String(20), nullable=True, default="DANG_LAM")
 
     bookings = relationship("Booking", back_populates="khach_hang", foreign_keys="Booking.khach_hang_id")
     memberships = relationship("Membership", back_populates="khach_hang")
@@ -156,9 +159,21 @@ class Shift(Base):
     ca_truc = Column(SQLEnum(ShiftType), nullable=False)
     san_phu_trach = Column(String(200))  # JSON list của field IDs dạng "1,2,3"
     ghi_chu = Column(Text)
+    luong_ca = Column(Integer, nullable=True)  # snapshot lương của ca; NULL = ca cũ, tính theo DEFAULT_LUONG_CA
     ngay_tao = Column(DateTime, default=datetime.utcnow)
 
     nhan_vien = relationship("User", back_populates="shifts")
+
+
+class SalaryPayment(Base):
+    """Xác nhận đã chuyển lương cho 1 nhân viên trong 1 tháng (thang = 'YYYY-MM')."""
+    __tablename__ = "salary_payments"
+    id = Column(Integer, primary_key=True, index=True)
+    nhan_vien_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    thang = Column(String(7), nullable=False)
+    da_chuyen = Column(Boolean, nullable=False, default=False)
+    so_tien = Column(Integer, nullable=True)  # tổng lương tại thời điểm xác nhận
+    ngay_chuyen = Column(DateTime, nullable=True)
 
 
 class Feedback(Base):
@@ -175,3 +190,14 @@ class Feedback(Base):
 
     booking = relationship("Booking", back_populates="feedback")
     khach_hang = relationship("User", back_populates="feedbacks")
+
+
+class SalaryRateChange(Base):
+    """Lịch sử thay đổi mức lương/ca của nhân viên. Mức mới áp dụng cho các ca từ ngay_ap_dung trở đi."""
+    __tablename__ = "salary_rate_changes"
+    id = Column(Integer, primary_key=True, index=True)
+    nhan_vien_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    luong_cu = Column(Integer, nullable=False)
+    luong_moi = Column(Integer, nullable=False)
+    ngay_ap_dung = Column(Date, nullable=False)
+    ngay_thay_doi = Column(DateTime, default=datetime.utcnow)

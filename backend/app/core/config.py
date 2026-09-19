@@ -57,6 +57,15 @@ class ShiftType(str, Enum):
     SANG = "SANG"
     CHIEU = "CHIEU"
 
+# Tình trạng làm việc của nhân viên (tách biệt với UserStatus = trạng thái tài khoản đăng nhập)
+class WorkStatus(str, Enum):
+    DANG_LAM = "DANG_LAM"
+    TAM_NGHI = "TAM_NGHI"
+    DA_NGHI = "DA_NGHI"
+
+# Lương mặc định mỗi ca (VND) — dùng cho ca cũ chưa có snapshot lương và nhân viên mới
+DEFAULT_LUONG_CA = 100_000
+
 # Giữ nguyên các cấu hình Threshold và Discount bên dưới của Khang...
 MEMBERSHIP_THRESHOLD = {"BAC": 1_000_000, "VANG": 3_000_000, "KIM_CUONG": 7_000_000}
 MEMBERSHIP_DISCOUNT = {"THUONG": 0.0, "BAC": 0.05, "VANG": 0.10, "KIM_CUONG": 0.15}

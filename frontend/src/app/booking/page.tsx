@@ -98,16 +98,28 @@ function BookingContent() {
   const [aiAppliedNotice, setAiAppliedNotice] = useState<string | null>(null);
   const contactSectionRef = useRef<HTMLDivElement>(null);
 
+  // Phút hiện tại trong ngày, cập nhật mỗi phút để ẩn các khung giờ đã qua khi đặt cho hôm nay
+  const [nowMin, setNowMin] = useState(() => new Date().getHours() * 60 + new Date().getMinutes());
+  useEffect(() => {
+    const id = setInterval(() => {
+      const n = new Date();
+      setNowMin(n.getHours() * 60 + n.getMinutes());
+    }, 60000);
+    return () => clearInterval(id);
+  }, []);
+
   const filteredStartTimes = useMemo(() => {
+    const isToday = selectedDate.toDateString() === new Date().toDateString();
     return START_TIMES.filter((t) => {
-      const h = parseInt(t.split(":")[0]);
+      const [h, m] = t.split(":").map(Number);
+      if (isToday && h * 60 + m <= nowMin) return false;
       if (timeFilter === "morning") return h >= 6 && h < 12;
       if (timeFilter === "afternoon") return h >= 12 && h < 17;
       if (timeFilter === "evening") return h >= 17 && h <= 23;
       return true;
     });
-  }, [timeFilter]);
-  
+  }, [timeFilter, selectedDate, nowMin]);
+
   const dateStr = useMemo(() => {
     const y = selectedDate.getFullYear();
     const m = String(selectedDate.getMonth() + 1).padStart(2, "0");
@@ -499,7 +511,11 @@ function BookingContent() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
+              {filteredStartTimes.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-8">Không còn khung giờ nào trong ngày này.</p>
+              )}
+              {/* Chỉ hiện ~4 hàng, phần còn lại cuộn dọc */}
+              <div className="max-h-[22rem] overflow-y-auto pr-2 custom-scrollbar grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 content-start">
                 {filteredStartTimes.map((t) => {
                   const available = isStartAvailable(t, duration);
                   const isSelected = startTime === t;

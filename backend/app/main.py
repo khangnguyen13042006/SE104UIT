@@ -11,7 +11,7 @@ from app.core.database import Base, engine, migrate_schema
 from app.routers import (
     auth, users, fields, bookings, services,
     invoices, memberships, shifts, feedbacks, reports,
-    chat
+    chat, staff
 )
 from app.utils.scheduler import reminder_loop
 
@@ -106,6 +106,7 @@ app.include_router(shifts.router)
 app.include_router(feedbacks.router)
 app.include_router(reports.router)
 app.include_router(chat.router)
+app.include_router(staff.router)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 @app.get("/")

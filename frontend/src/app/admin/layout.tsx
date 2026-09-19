@@ -8,7 +8,7 @@ import { apiGet, getUser, clearToken, formatVND } from "@/lib/api";
 import {
   LayoutDashboard, Calendar, MapPin, Package, Users, ClipboardList,
   Star, FileBarChart, LogOut, Menu, X, Zap, ChevronRight, Bell,
-  CheckCircle2, Clock, AlertCircle, UserCog
+  CheckCircle2, Clock, AlertCircle, UserCog, Check, CheckCheck
 } from "lucide-react";
 
 const MENU = [
@@ -28,7 +28,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifs, setNotifs] = useState<any[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  const unreadCount = notifs.filter((n) => !readIds.has(n.id)).length;
   const router = useRouter();
   const pathname = usePathname();
   const notifRef = useRef<HTMLDivElement>(null);
@@ -40,7 +41,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       return;
     }
     setU(u);
+    try {
+      setReadIds(new Set(JSON.parse(localStorage.getItem(`notif_read_${u.id}`) || "[]")));
+    } catch {}
   }, [router]);
+
+  // Trạng thái đã đọc lưu theo từng tài khoản trong localStorage (id thông báo có kèm phiên bản
+  // nội dung nên khi nội dung đổi, thông báo sẽ hiện lại là chưa đọc)
+  function persistRead(next: Set<string>) {
+    setReadIds(next);
+    try {
+      localStorage.setItem(`notif_read_${user.id}`, JSON.stringify(Array.from(next).slice(-500)));
+    } catch {}
+  }
+  function markRead(id: string) {
+    if (readIds.has(id)) return;
+    persistRead(new Set(readIds).add(id));
+  }
+  function markAllRead() {
+    persistRead(new Set([...readIds, ...notifs.map((n) => n.id)]));
+  }
 
   // Load notifications: booking chờ xác nhận, đánh giá thấp, dịch vụ sắp hết hàng, booking đã hủy, booking đổi lịch
   async function loadNotifs() {
@@ -61,7 +81,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       const items: any[] = [];
       (pendingBookings || []).slice(0, 10).forEach((b: any) => {
         items.push({
-          id: `b-${b.id}`,
+          id: `b-${b.id}-${b.ngay_tao}`,
           type: "booking",
           icon: "📅",
           title: `Booking chờ xác nhận`,
@@ -88,7 +108,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         .slice(0, 5)
         .forEach((s: any) => {
           items.push({
-            id: `s-${s.id}`,
+            id: `s-${s.id}-${s.ton_kho}`,
             type: "service",
             icon: "📦",
             title: "Dịch vụ sắp hết hàng",
@@ -112,7 +132,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       });
       (rescheduledBookings || []).slice(0, 5).forEach((b: any) => {
         items.push({
-          id: `r-${b.id}`,
+          id: `r-${b.id}-${b.ngay_doi_lich_gan_nhat}`,
           type: "reschedule",
           icon: "🔄",
           title: "Đổi lịch đặt sân",
@@ -125,7 +145,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       items.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
       setNotifs(items);
-      setUnreadCount(items.length);
     } catch {}
   }
 
@@ -261,7 +280,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   </span>
                 )}
               </button>
-              <NotifDropdown open={notifOpen} notifs={notifs} onClose={() => setNotifOpen(false)} />
+              <NotifDropdown open={notifOpen} notifs={notifs} onClose={() => setNotifOpen(false)}
+                readIds={readIds} onRead={markRead} onReadAll={markAllRead} unreadCount={unreadCount} />
             </div>
             <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-secondary">
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center">
@@ -277,7 +297,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {notifOpen && (
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
               className="lg:hidden mx-4 mt-2 z-30">
-              <NotifList notifs={notifs} onClose={() => setNotifOpen(false)} />
+              <NotifList notifs={notifs} onClose={() => setNotifOpen(false)}
+                readIds={readIds} onRead={markRead} onReadAll={markAllRead} unreadCount={unreadCount} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -288,28 +309,38 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   );
 }
 
-function NotifDropdown({ open, notifs, onClose }: any) {
+function NotifDropdown({ open, notifs, onClose, readIds, onRead, onReadAll, unreadCount }: any) {
   return (
     <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
           className="absolute right-0 top-full mt-2 w-96 max-w-[calc(100vw-2rem)] z-50">
-          <NotifList notifs={notifs} onClose={onClose} />
+          <NotifList notifs={notifs} onClose={onClose}
+            readIds={readIds} onRead={onRead} onReadAll={onReadAll} unreadCount={unreadCount} />
         </motion.div>
       )}
     </AnimatePresence>
   );
 }
 
-function NotifList({ notifs, onClose }: any) {
+function NotifList({ notifs, onClose, readIds, onRead, onReadAll, unreadCount }: any) {
   return (
     <div className="bg-card rounded-3xl border border-border shadow-2xl overflow-hidden">
-      <div className="p-4 border-b border-border flex items-center justify-between">
+      <div className="p-4 border-b border-border flex items-center justify-between gap-3">
         <div>
           <h3 className="font-display font-bold text-foreground">Thông báo</h3>
-          <p className="text-xs text-muted-foreground">{notifs.length} mục cần chú ý</p>
+          <p className="text-xs text-muted-foreground">
+            {unreadCount > 0 ? `${unreadCount} chưa đọc • ${notifs.length} tổng` : `${notifs.length} mục • đã đọc hết`}
+          </p>
         </div>
-        <Bell className="w-5 h-5 text-primary" />
+        {unreadCount > 0 ? (
+          <button onClick={onReadAll}
+            className="flex items-center gap-1 text-xs font-semibold text-primary px-3 py-1.5 rounded-xl hover:bg-primary/10 transition-colors shrink-0">
+            <CheckCheck className="w-4 h-4" /> Đã đọc hết
+          </button>
+        ) : (
+          <Bell className="w-5 h-5 text-primary" />
+        )}
       </div>
       <div className="max-h-96 overflow-y-auto">
         {notifs.length === 0 ? (
@@ -319,29 +350,44 @@ function NotifList({ notifs, onClose }: any) {
           </div>
         ) : (
           <div className="divide-y divide-border">
-            {notifs.map((n: any) => (
-              <Link key={n.id} href={n.href} onClick={onClose}
-                className="block p-4 hover:bg-secondary/50 transition-colors">
-                <div className="flex items-start gap-3">
-                  <div className={`w-10 h-10 rounded-2xl shrink-0 flex items-center justify-center text-lg ${
-                    n.urgent ? "bg-destructive/10" : "bg-primary/10"
+            {notifs.map((n: any) => {
+              const isRead = readIds.has(n.id);
+              return (
+                <div key={n.id}
+                  className={`flex items-start gap-1 transition-colors ${
+                    isRead ? "opacity-60 hover:opacity-100" : "bg-primary/5 border-l-4 border-l-primary"
                   }`}>
-                    {n.icon}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="font-semibold text-foreground text-sm">{n.title}</span>
-                      {n.urgent && <AlertCircle className="w-3 h-3 text-destructive" />}
+                  <Link href={n.href} onClick={() => { onRead(n.id); onClose(); }}
+                    className="flex-1 min-w-0 block p-4 hover:bg-secondary/50 transition-colors">
+                    <div className="flex items-start gap-3">
+                      <div className={`w-10 h-10 rounded-2xl shrink-0 flex items-center justify-center text-lg ${
+                        n.urgent ? "bg-destructive/10" : "bg-primary/10"
+                      }`}>
+                        {n.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className={`text-foreground text-sm ${isRead ? "font-medium" : "font-bold"}`}>{n.title}</span>
+                          {n.urgent && <AlertCircle className="w-3 h-3 text-destructive" />}
+                          {!isRead && <span className="w-2 h-2 rounded-full bg-primary shrink-0" />}
+                        </div>
+                        <p className="text-xs text-muted-foreground line-clamp-2">{n.desc}</p>
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                          <Clock className="w-3 h-3" />
+                          <span>{new Date(n.time).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-xs text-muted-foreground line-clamp-2">{n.desc}</p>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                      <Clock className="w-3 h-3" />
-                      <span>{new Date(n.time).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-                    </div>
-                  </div>
+                  </Link>
+                  {!isRead && (
+                    <button onClick={() => onRead(n.id)} title="Xác nhận đã đọc"
+                      className="m-3 p-2 rounded-xl text-primary hover:bg-primary/10 transition-colors shrink-0">
+                      <Check className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
-              </Link>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
