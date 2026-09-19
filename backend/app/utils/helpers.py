@@ -9,11 +9,59 @@ from sqlalchemy import and_, or_, func
 # SỬA: Thêm Invoice vào danh sách import từ models
 from app.models import Booking, Field, Membership, Invoice, Feedback
 from app.core.config import (
-    BookingStatus, MEMBERSHIP_DISCOUNT, MEMBERSHIP_FEE
+    BookingStatus, PaymentStatus, MEMBERSHIP_DISCOUNT, MEMBERSHIP_FEE, PAYMENT_WINDOW_MINUTES
 )
 
 PEAK_HOUR_START = time(17, 0)
 PEAK_HOUR_END = time(22, 0)
+
+def payment_deadline(b: Booking) -> datetime:
+    """Hạn thanh toán (UTC) của đơn chờ thanh toán."""
+    return b.han_thanh_toan or ((b.ngay_tao or datetime.utcnow()) + timedelta(minutes=PAYMENT_WINDOW_MINUTES))
+
+
+def amount_paid(b: Booking) -> Decimal:
+    """Số tiền khách đã thực sự thanh toán cho đơn.
+    Ưu tiên cột so_tien_da_tt; với hóa đơn cũ (NULL) thì suy ra từ trạng thái hóa đơn/đơn."""
+    inv = b.invoice
+    if not inv:
+        return Decimal(0)
+    if inv.so_tien_da_tt is not None:
+        return Decimal(inv.so_tien_da_tt)
+    if inv.trang_thai in (PaymentStatus.DA_THANH_TOAN, PaymentStatus.CHO_HOAN_TIEN, PaymentStatus.HOAN_TIEN):
+        return Decimal(inv.tong_cong)
+    # Đơn online cũ đã được xác nhận (khách tự đặt) → coi như đã thanh toán đủ
+    if (
+        b.khach_hang_id is not None
+        and b.nguoi_tao_id == b.khach_hang_id
+        and b.trang_thai in (BookingStatus.DA_XAC_NHAN, BookingStatus.DANG_SU_DUNG, BookingStatus.HOAN_THANH)
+    ):
+        return Decimal(inv.tong_cong)
+    return Decimal(0)
+
+
+def payment_due(b: Booking) -> Decimal:
+    """Số tiền khách còn phải thanh toán online:
+    - Đơn CHỜ XÁC NHẬN: toàn bộ hóa đơn chưa trả.
+    - Đơn ĐÃ XÁC NHẬN: phần chênh lệch sau khi đổi lịch sang giờ đắt hơn (nếu có)."""
+    inv = b.invoice
+    if not inv:
+        return Decimal(0)
+    if b.trang_thai == BookingStatus.CHO_XAC_NHAN:
+        return max(Decimal(0), Decimal(inv.tong_cong) - amount_paid(b))
+    if b.trang_thai == BookingStatus.DA_XAC_NHAN:
+        return max(Decimal(0), Decimal(inv.chenh_lech_cho_tt or 0))
+    return Decimal(0)
+
+
+def mark_invoice_paid(b: Booking) -> None:
+    """Ghi nhận khách đã thanh toán đủ hóa đơn hiện tại."""
+    if b.invoice:
+        b.invoice.trang_thai = PaymentStatus.DA_THANH_TOAN
+        b.invoice.so_tien_da_tt = b.invoice.tong_cong
+        b.invoice.chenh_lech_cho_tt = Decimal(0)
+    b.han_thanh_toan = None
+
 
 def generate_code(prefix: str = "BK") -> str:
     """Sinh mã: prefix + 8 chữ số ngẫu nhiên"""

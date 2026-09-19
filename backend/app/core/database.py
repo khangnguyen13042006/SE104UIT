@@ -78,7 +78,12 @@ TABLE_MIGRATIONS: dict[str, dict[str, str]] = {
     "shifts": {
         "luong_ca": "integer",
     },
+    "invoices": {
+        "so_tien_da_tt": "numeric(12,2)",
+        "chenh_lech_cho_tt": "numeric(12,2)",
+    },
     "bookings": {
+        "han_thanh_toan": "datetime",
         "ty_le_hoan_tien": "float",
         "ngay_huy": "datetime",
         "stk_hoan_tien": "varchar(30)",

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import { apiGet, apiPost, apiUpload, formatVND } from "@/lib/api";
+import { useCountdown } from "@/lib/countdown";
 import {
   CheckCircle2,
   Clock,
@@ -25,6 +26,8 @@ import {
   ShieldCheck,
   XCircle,
   ArrowRight,
+  Timer,
+  Receipt,
 } from "lucide-react";
 
 const BANK = {
@@ -79,7 +82,8 @@ export default function PaymentPage() {
         });
       }
 
-      if (b.ghi_chu && b.ghi_chu.includes("KHÁCH BÁO ĐÃ CHUYỂN KHOẢN")) {
+      // Chỉ áp dụng cho lần thanh toán đầu; thanh toán chênh lệch sau đổi lịch là một lần thanh toán mới
+      if (b.trang_thai === "CHO_XAC_NHAN" && b.ghi_chu && b.ghi_chu.includes("KHÁCH BÁO ĐÃ CHUYỂN KHOẢN")) {
         setClaimed(true);
       }
     } catch (e: any) {
@@ -92,6 +96,15 @@ export default function PaymentPage() {
   useEffect(() => {
     load();
   }, [bookingId]);
+
+  // Đếm ngược hạn thanh toán (chỉ đơn đang chờ thanh toán lần đầu)
+  const cd = useCountdown(booking?.trang_thai === "CHO_XAC_NHAN" ? booking.han_thanh_toan : null);
+  useEffect(() => {
+    if (cd.active && cd.expired) {
+      const t = setTimeout(load, 2500); // hệ thống tự hủy đơn ngay khi quá hạn → tải lại để hiển thị đúng
+      return () => clearTimeout(t);
+    }
+  }, [cd.active, cd.expired]);
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     if (e.target.files && e.target.files[0]) {
@@ -195,12 +208,21 @@ export default function PaymentPage() {
     );
   }
 
-  const amount = Math.round(invoice?.tong_cong || 0);
+  const tong = Math.round(parseFloat(invoice?.tong_cong || 0));
+  const due = Math.round(parseFloat(invoice?.so_tien_can_tt || 0));
+  const paidAmt = Math.round(parseFloat(invoice?.so_tien_da_tt || 0));
+  // Đổi lịch sang giờ đắt hơn: đơn đã xác nhận nhưng còn phải trả phần chênh lệch
+  const isDiffMode = booking.trang_thai === "DA_XAC_NHAN" && due > 0;
+  const amount = due > 0 ? due : tong;
+  const isCancelled = booking.trang_thai === "HUY";
+  const isExpired = booking.trang_thai === "CHO_XAC_NHAN" && cd.active && cd.expired;
   const isConfirmed =
-    booking.trang_thai === "DA_XAC_NHAN" ||
-    booking.trang_thai === "DANG_SU_DUNG" ||
-    booking.trang_thai === "HOAN_THANH";
+    !isDiffMode &&
+    (booking.trang_thai === "DA_XAC_NHAN" ||
+      booking.trang_thai === "DANG_SU_DUNG" ||
+      booking.trang_thai === "HOAN_THANH");
   const desc = `Thanh toan ${booking.ma_dat_san}`;
+  const payLaterHint = booking.trang_thai === "CHO_XAC_NHAN" && cd.active && !cd.expired ? ` (còn ${cd.text})` : "";
   const qrUrl = `https://img.vietqr.io/image/${BANK.bin}-${BANK.account}-qr_only.png?amount=${amount}&addInfo=${encodeURIComponent(
     desc
   )}&accountName=${encodeURIComponent(BANK.holder)}`;
@@ -210,22 +232,59 @@ export default function PaymentPage() {
       <Navbar />
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Link
-          href="/booking"
+          href="/my-bookings"
           className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" /> Quay lại đặt sân
+          <ArrowLeft className="w-4 h-4" /> Lịch đặt của tôi
         </Link>
 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-8">
           <h1 className="text-3xl md:text-4xl font-display font-bold text-foreground mb-2">
-            {isConfirmed ? "Xác nhận đặt sân" : "Thanh toán & Xác nhận"}
+            {isConfirmed
+              ? "Xác nhận đặt sân"
+              : isCancelled
+              ? "Đơn đặt sân đã hủy"
+              : isDiffMode
+              ? "Thanh toán chênh lệch đổi lịch"
+              : "Thanh toán & Xác nhận"}
           </h1>
           <p className="text-muted-foreground">
             {isConfirmed
               ? "Đơn đặt sân của bạn đã được xác nhận thành công"
+              : isCancelled
+              ? "Đơn này không còn hiệu lực nên không thể thanh toán"
+              : isDiffMode
+              ? "Khung giờ mới có giá cao hơn — vui lòng thanh toán phần chênh lệch để hoàn tất đổi lịch"
               : "Quét mã QR hoặc gửi ảnh biên lai để hệ thống AI tự động kích hoạt sân"}
           </p>
         </motion.div>
+
+        {booking.trang_thai === "CHO_XAC_NHAN" && cd.active && (
+          <div
+            className={`mb-6 p-4 rounded-2xl border flex items-center gap-3 ${
+              cd.expired
+                ? "bg-destructive/10 border-destructive/20 text-destructive"
+                : cd.remainingMs < 5 * 60000
+                ? "bg-red-50 border-red-200 text-red-700"
+                : "bg-amber-50 border-amber-200 text-amber-900"
+            }`}
+          >
+            <Timer className="w-6 h-6 shrink-0" />
+            <div className="flex-1">
+              {cd.expired ? (
+                <div className="font-bold">Đã hết thời gian thanh toán — đơn đang được hệ thống hủy tự động.</div>
+              ) : (
+                <>
+                  <div className="text-sm">Sân được giữ chỗ cho bạn trong</div>
+                  <div className="text-2xl font-display font-bold tabular-nums">{cd.text}</div>
+                </>
+              )}
+            </div>
+            {!cd.expired && (
+              <div className="text-xs text-right max-w-[180px] opacity-80">Quá hạn mà chưa thanh toán, đơn sẽ tự động hủy.</div>
+            )}
+          </div>
+        )}
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -296,6 +355,20 @@ export default function PaymentPage() {
               </Link>
             </div>
           </motion.div>
+        ) : isCancelled || isExpired ? (
+          <div className="bg-destructive/5 border border-destructive/20 rounded-3xl p-8 text-center mb-6">
+            <XCircle className="w-12 h-12 mx-auto mb-3 text-destructive" />
+            <h2 className="text-xl font-display font-bold text-foreground mb-1">
+              {isExpired ? "Đã hết thời gian thanh toán" : "Đơn đặt sân đã bị hủy"}
+            </h2>
+            {booking.ly_do_huy && <p className="text-sm text-muted-foreground mb-4">{booking.ly_do_huy}</p>}
+            <Link
+              href="/booking"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-2xl font-semibold"
+            >
+              Đặt sân lại
+            </Link>
+          </div>
         ) : (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -303,6 +376,45 @@ export default function PaymentPage() {
             transition={{ delay: 0.2 }}
             className="bg-card rounded-3xl border border-border p-6 mb-6"
           >
+            {/* HÓA ĐƠN CHÊNH LỆCH (đổi lịch sang giờ đắt hơn) */}
+            {isDiffMode && (
+              <div className="mb-8 rounded-2xl border border-amber-200 bg-amber-50/60 overflow-hidden">
+                <div className="px-4 py-2.5 bg-amber-100 text-amber-900 flex items-center gap-2 text-sm font-bold">
+                  <Receipt className="w-4 h-4" /> Hóa đơn sau khi đổi lịch
+                </div>
+                <div className="p-4 space-y-2 text-sm">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Tiền thuê sân (mới)</span>
+                    <span className="text-foreground">{formatVND(invoice?.tien_san || 0)}</span>
+                  </div>
+                  {parseFloat(invoice?.tien_dich_vu || 0) > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Dịch vụ đi kèm</span>
+                      <span className="text-foreground">{formatVND(invoice.tien_dich_vu)}</span>
+                    </div>
+                  )}
+                  {parseFloat(invoice?.giam_gia || 0) > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Giảm giá thành viên</span>
+                      <span className="text-primary font-semibold">-{formatVND(invoice.giam_gia)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-bold text-foreground">
+                    <span>Tổng hóa đơn mới</span>
+                    <span>{formatVND(tong)}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground border-t border-dashed border-amber-300 pt-2">
+                    <span>Đã thanh toán</span>
+                    <span className="text-foreground">-{formatVND(paidAmt)}</span>
+                  </div>
+                  <div className="flex justify-between items-center font-bold text-amber-900 text-base">
+                    <span>Chênh lệch cần thanh toán</span>
+                    <span className="text-xl font-display">{formatVND(due)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="grid md:grid-cols-2 gap-8 items-center">
               <div className="text-center">
                 <div className="inline-block p-4 bg-white rounded-3xl shadow-lg border border-border/40">
@@ -531,7 +643,23 @@ export default function PaymentPage() {
           </motion.div>
         )}
 
-        {!isConfirmed && (
+        {!isConfirmed && !isCancelled && !isExpired && (
+          <div className="mt-2 text-center">
+            <Link
+              href="/my-bookings"
+              className="inline-flex items-center gap-2 px-6 py-3 border border-border hover:bg-secondary rounded-2xl text-sm font-semibold transition-colors"
+            >
+              <Clock className="w-4 h-4" /> Thanh toán sau{payLaterHint}
+            </Link>
+            <p className="text-xs text-muted-foreground mt-2">
+              {isDiffMode
+                ? "Bạn có thể quay lại thanh toán khoản chênh lệch bất cứ lúc nào tại mục Lịch đặt của tôi."
+                : "Đơn được giữ chỗ trong thời gian đếm ngược; vào Lịch đặt của tôi để thanh toán trước khi hết hạn."}
+            </p>
+          </div>
+        )}
+
+        {!isConfirmed && !isCancelled && !isExpired && (
           <p className="text-xs text-center text-muted-foreground mt-6">
             Sau khi bấm <strong>Đã thanh toán</strong>, đơn sẽ chuyển sang trạng thái <em>chờ nhân viên xác nhận</em>.
           </p>

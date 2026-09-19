@@ -32,9 +32,9 @@ export default function BookingsAdmin() {
   const [rescheduleTarget, setRescheduleTarget] = useState<any>(null);
   const [bankInfoTarget, setBankInfoTarget] = useState<any>(null);
 
-  // States form Hủy: "none" = không hoàn tiền, "customer" = theo yêu cầu khách (50%), "venue_fault" = lỗi từ sân (100%)
+  // Hủy đơn: "policy" = theo chính sách tự động (trước 24h hoàn 50%, sau đó không hoàn), "venue_fault" = lỗi từ sân (100%)
   const [lyDoHuy, setLyDoHuy] = useState("");
-  const [refundChoice, setRefundChoice] = useState<"none" | "customer" | "venue_fault">("none");
+  const [refundChoice, setRefundChoice] = useState<"policy" | "venue_fault">("policy");
 
   // States form Dịch vụ
   const [selSvcId, setSelSvcId] = useState("");
@@ -83,11 +83,15 @@ export default function BookingsAdmin() {
     return matchSearch && matchStatus;
   });
 
-  // Với Nhân viên (không được chọn hoàn tiền thủ công), tự tính theo policy 24h để hiển thị dự kiến
-  const cancelHoursUntil = cancelTarget
-    ? (new Date(`${cancelTarget.ngay_dat}T${cancelTarget.gio_bat_dau}`).getTime() - Date.now()) / 3600000
-    : 0;
-  const cancelWillRefund = isManager ? refundChoice !== "none" : cancelHoursUntil >= 24;
+  // Mức hoàn tiền: tự động theo mốc 24h; chỉ "lỗi từ sân" (Admin/Quản lý) mới hoàn 100%. Tiền hoàn tính trên số đã thanh toán.
+  const cancelStart = cancelTarget ? new Date(`${cancelTarget.ngay_dat}T${cancelTarget.gio_bat_dau}`) : null;
+  const cancelHoursUntil = cancelStart ? (cancelStart.getTime() - Date.now()) / 3600000 : 0;
+  const cancelPaid = cancelTarget ? parseFloat(cancelTarget.invoice?.so_tien_da_tt || 0) : 0;
+  const cancelRate = cancelPaid <= 0 ? 0 : isManager && refundChoice === "venue_fault" ? 1 : cancelHoursUntil >= 24 ? 0.5 : 0;
+  const cancelWillRefund = cancelRate > 0;
+  const cancelCutoffText = cancelStart
+    ? new Date(cancelStart.getTime() - 24 * 3600000).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })
+    : "";
 
   async function confirmBooking(id: number) {
     if (!confirm("Xác nhận đã nhận tiền cọc và duyệt đơn này?")) return;
@@ -108,19 +112,15 @@ export default function BookingsAdmin() {
   async function handleCancel() {
     if (!lyDoHuy.trim()) return alert("Vui lòng nhập lý do hủy để lưu lịch sử");
     try {
-      // Nếu là Quản lý/Admin -> chọn 1 trong 3: không hoàn / theo yêu cầu khách (50%) / lỗi từ sân (100%).
-      // Nếu là NV -> giao cho backend tự tính theo policy 24h. STK hoàn tiền KHÔNG nhập ở đây —
-      // khách tự cung cấp sau tại "Lịch đặt của tôi", hệ thống sẽ gửi email hướng dẫn.
+      // Mức hoàn do backend tự tính theo policy (trước 24h hoàn 50%, sau đó không hoàn). Chỉ Admin/Quản lý
+      // được đánh dấu "lỗi từ sân" (hoàn 100%). STK hoàn tiền khách tự cung cấp sau tại "Lịch đặt của tôi".
       const payload: any = { ly_do_huy: lyDoHuy };
-      if (isManager) {
-        if (refundChoice === "venue_fault") payload.loi_tu_san = true;
-        else payload.hoan_tien = refundChoice === "customer";
-      }
+      if (isManager && refundChoice === "venue_fault") payload.loi_tu_san = true;
 
       await apiPost(`/api/bookings/${cancelTarget.id}/cancel`, payload);
       setCancelTarget(null);
       setLyDoHuy("");
-      setRefundChoice("none");
+      setRefundChoice("policy");
       load();
     } catch (e: any) { alert(e.message); }
   }
@@ -266,6 +266,16 @@ export default function BookingsAdmin() {
                           {STATUS_LABEL[b.trang_thai]?.text}
                         </span>
                         
+                        {b.trang_thai === "DA_XAC_NHAN" && parseFloat(b.invoice?.so_tien_can_tt || 0) > 0 && (
+                          <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200 mt-1 whitespace-nowrap">
+                            ⏳ Chờ thanh toán chênh lệch {formatVND(b.invoice.so_tien_can_tt)}
+                          </span>
+                        )}
+                        {b.trang_thai === "CHO_XAC_NHAN" && b.han_thanh_toan && (
+                          <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200 mt-1 whitespace-nowrap">
+                            ⏳ Hạn thanh toán {new Date(b.han_thanh_toan + "Z").toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        )}
                         {b.trang_thai === "HUY" && (
                           <>
                             {b.hoan_tien === false && (
@@ -502,43 +512,50 @@ export default function BookingsAdmin() {
                 className="w-full p-4 rounded-2xl bg-secondary/50 border border-border outline-none min-h-[100px] mb-4 focus:border-red-500 transition-all font-medium shadow-inner" 
               />
 
-              {/* CHỈ HIỂN THỊ TÙY CHỌN HOÀN TIỀN CHO ADMIN/QUẢN LÝ */}
-              {isManager ? (
-                <div className="space-y-2 mb-6">
-                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-xl border border-border hover:bg-secondary/50">
-                    <input type="radio" checked={refundChoice === "none"} onChange={() => setRefundChoice("none")}
-                      className="w-4 h-4 accent-red-600" />
-                    <span className="text-sm font-bold text-foreground">Không hoàn tiền</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-xl border border-border hover:bg-secondary/50">
-                    <input type="radio" checked={refundChoice === "customer"} onChange={() => setRefundChoice("customer")}
-                      className="w-4 h-4 accent-red-600" />
-                    <span className="text-sm font-bold text-foreground">Theo yêu cầu khách (hoàn 50%)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-xl border border-orange-200 bg-orange-50 hover:bg-orange-100">
+              {/* MỨC HOÀN TIỀN: tự động theo mốc 24h; Admin/Quản lý có thêm lựa chọn "lỗi từ sân" (100%) */}
+              <div className="space-y-2 mb-4">
+                <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border ${refundChoice === "policy" ? "border-red-300 bg-red-50/50" : "border-border hover:bg-secondary/50"}`}>
+                  <input type="radio" checked={refundChoice === "policy"} onChange={() => setRefundChoice("policy")}
+                    className="w-4 h-4 mt-0.5 accent-red-600" />
+                  <div>
+                    <div className="text-sm font-bold text-foreground">Theo chính sách hủy sân (tự động)</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      Hủy <strong>trước {cancelCutoffText}</strong> (cách giờ đá ≥ 24h) hoàn 50%; sau mốc này không hoàn.
+                      Còn {Math.max(0, cancelHoursUntil).toFixed(1)}h tới giờ đá →{" "}
+                      <strong className={cancelHoursUntil >= 24 ? "text-emerald-600" : "text-red-600"}>
+                        {cancelHoursUntil >= 24 ? "được hoàn 50%" : "không hoàn tiền"}
+                      </strong>.
+                    </div>
+                  </div>
+                </label>
+                {isManager && (
+                  <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border ${refundChoice === "venue_fault" ? "border-orange-400 bg-orange-100" : "border-orange-200 bg-orange-50 hover:bg-orange-100"}`}>
                     <input type="radio" checked={refundChoice === "venue_fault"} onChange={() => setRefundChoice("venue_fault")}
-                      className="w-4 h-4 accent-orange-600" />
-                    <span className="text-sm font-bold text-orange-700">Lỗi từ phía sân (hoàn 100%)</span>
+                      className="w-4 h-4 mt-0.5 accent-orange-600" />
+                    <div>
+                      <div className="text-sm font-bold text-orange-700">Lỗi từ phía sân (hoàn 100%)</div>
+                      <div className="text-xs text-orange-700/80 mt-0.5">Sự cố/hỏng hóc từ sân — hoàn toàn bộ, bất kể thời điểm hủy.</div>
+                    </div>
                   </label>
-                </div>
-              ) : (
-                <div className="mb-6 px-2">
-                  <p className="text-sm text-orange-600 font-bold bg-orange-50 p-3 rounded-xl">
-                    Còn {cancelHoursUntil.toFixed(1)}h trước giờ chơi — hệ thống sẽ tự động{" "}
-                    {cancelWillRefund ? "hoàn 50% tiền sân" : "KHÔNG hoàn tiền"} theo quy định (Hủy trước 24h).
-                  </p>
-                </div>
-              )}
+                )}
+              </div>
 
-              {cancelWillRefund && (
-                <div className="mb-6 p-3 rounded-xl bg-secondary/50 text-xs text-muted-foreground">
-                  Hệ thống sẽ gửi email cho khách, hướng dẫn vào mục "Lịch đặt của tôi" để cung cấp thông tin
-                  nhận hoàn tiền (Số tài khoản, Tên chủ tài khoản, Ngân hàng).
-                </div>
-              )}
+              <div className="mb-6 p-3 rounded-xl bg-secondary/50 text-xs">
+                {cancelPaid <= 0 ? (
+                  <span className="text-muted-foreground">Đơn này <strong>chưa thanh toán</strong> nên không phát sinh khoản hoàn tiền.</span>
+                ) : cancelWillRefund ? (
+                  <span className="text-muted-foreground">
+                    Đã thanh toán {formatVND(cancelPaid)} → hoàn <strong className="text-foreground">{Math.round(cancelRate * 100)}% = {formatVND(cancelPaid * cancelRate)}</strong>.
+                    Hệ thống gửi email cho khách hướng dẫn vào mục "Lịch đặt của tôi" để cung cấp thông tin nhận hoàn tiền
+                    (Số tài khoản, Tên chủ tài khoản, Ngân hàng).
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">Đã thanh toán {formatVND(cancelPaid)} nhưng đã qua mốc hoàn tiền → <strong className="text-red-600">không hoàn</strong>.</span>
+                )}
+              </div>
 
               <div className="flex gap-3">
-                <button onClick={() => { setCancelTarget(null); setLyDoHuy(""); setRefundChoice("none"); }} className="flex-1 py-4 font-bold hover:bg-secondary rounded-2xl transition-all">Quay lại</button>
+                <button onClick={() => { setCancelTarget(null); setLyDoHuy(""); setRefundChoice("policy"); }} className="flex-1 py-4 font-bold hover:bg-secondary rounded-2xl transition-all">Quay lại</button>
                 <button onClick={handleCancel} className="flex-1 py-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-red-600/20 active:scale-95 transition-all">Xác nhận hủy</button>
               </div>
             </motion.div>
@@ -550,9 +567,12 @@ export default function BookingsAdmin() {
         <RescheduleModal
           booking={rescheduleTarget}
           onClose={() => setRescheduleTarget(null)}
-          onSuccess={(updated) => {
+          onSuccess={(updated, quote) => {
             setRescheduleTarget(null);
             setList((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+            if (parseFloat(quote?.can_thanh_toan_them || 0) > 0) {
+              alert(`Đã đổi lịch và cập nhật hóa đơn. Đã gửi email yêu cầu khách thanh toán chênh lệch ${formatVND(quote.can_thanh_toan_them)}.`);
+            }
           }}
         />
       )}

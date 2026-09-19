@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { apiGet, apiPut } from "@/lib/api";
-import { X, Calendar, Clock, Loader2, AlertCircle } from "lucide-react";
+import { apiGet, apiPost, apiPut, formatVND, getUser } from "@/lib/api";
+import { X, Calendar, Clock, Loader2, AlertCircle, Receipt, Mail } from "lucide-react";
 
 const START_TIMES: string[] = [];
 for (let h = 6; h <= 22; h++) {
@@ -25,8 +25,11 @@ function addDuration(start: string, hours: number): string {
 interface Props {
   booking: any;
   onClose: () => void;
-  onSuccess: (updated: any) => void;
+  onSuccess: (updated: any, quote?: any) => void;
 }
+
+const localDateStr = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 export default function RescheduleModal({ booking, onClose, onSuccess }: Props) {
   const [selectedDate, setSelectedDate] = useState<string>(booking.ngay_dat);
@@ -36,6 +39,13 @@ export default function RescheduleModal({ booking, onClose, onSuccess }: Props) 
   const [loadingSchedule, setLoadingSchedule] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState("");
+  const [quote, setQuote] = useState<any>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [isStaff, setIsStaff] = useState(false);
+
+  useEffect(() => {
+    setIsStaff(["ADMIN", "QUAN_LY", "NHAN_VIEN"].includes(getUser()?.vai_tro));
+  }, []);
 
   useEffect(() => {
     setLoadingSchedule(true);
@@ -70,7 +80,7 @@ export default function RescheduleModal({ booking, onClose, onSuccess }: Props) 
     if (eh * 60 + em > 23 * 60) return false;
 
     const now = new Date();
-    const isToday = selectedDate === now.toISOString().slice(0, 10);
+    const isToday = selectedDate === localDateStr(now);
     if (isToday) {
       const currentTotalMin = now.getHours() * 60 + now.getMinutes();
       if (startTotalMin <= currentTotalMin) return false;
@@ -79,7 +89,38 @@ export default function RescheduleModal({ booking, onClose, onSuccess }: Props) 
   }
 
   const endTime = useMemo(() => (startTime ? addDuration(startTime, duration) : null), [startTime, duration]);
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = localDateStr();
+
+  // Xem trước hóa đơn đổi lịch mỗi khi đổi ngày / giờ / thời lượng
+  useEffect(() => {
+    if (!startTime || !endTime) {
+      setQuote(null);
+      return;
+    }
+    let cancelled = false;
+    setQuoteLoading(true);
+    setErr("");
+    const t = setTimeout(() => {
+      apiPost(`/api/bookings/${booking.id}/reschedule-preview`, {
+        ngay_dat: selectedDate,
+        gio_bat_dau: `${startTime}:00`,
+        gio_ket_thuc: `${endTime}:00`,
+      })
+        .then((q) => !cancelled && setQuote(q))
+        .catch((e) => {
+          if (cancelled) return;
+          setQuote(null);
+          setErr(e.message || "Không thể tính hóa đơn cho khung giờ này.");
+        })
+        .finally(() => !cancelled && setQuoteLoading(false));
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [selectedDate, startTime, endTime, booking.id]);
+
+  const num = (v: any) => parseFloat(v || 0);
 
   async function submit() {
     if (!startTime || !endTime) {
@@ -94,7 +135,7 @@ export default function RescheduleModal({ booking, onClose, onSuccess }: Props) 
         gio_bat_dau: `${startTime}:00`,
         gio_ket_thuc: `${endTime}:00`,
       });
-      onSuccess(updated);
+      onSuccess(updated, quote);
     } catch (e: any) {
       setErr(e.message || "Có lỗi xảy ra, vui lòng thử lại.");
     } finally {
@@ -200,6 +241,64 @@ export default function RescheduleModal({ booking, onClose, onSuccess }: Props) 
             </div>
           )}
 
+          {/* HÓA ĐƠN ĐỔI LỊCH (xem trước) */}
+          {quoteLoading && !quote && (
+            <div className="py-4 text-center">
+              <Loader2 className="w-5 h-5 animate-spin mx-auto text-primary" />
+            </div>
+          )}
+          {quote && (
+            <div className="rounded-2xl border border-border overflow-hidden">
+              <div className="px-4 py-2.5 bg-secondary/60 flex items-center gap-2 text-sm font-bold">
+                <Receipt className="w-4 h-4 text-primary" /> Hóa đơn đổi lịch
+                {quoteLoading && <Loader2 className="w-3.5 h-3.5 animate-spin ml-auto text-muted-foreground" />}
+              </div>
+              <div className="p-4 space-y-2 text-sm">
+                <BillRow label={`Tiền thuê sân (${startTime} - ${endTime})`} value={formatVND(quote.tien_san_moi)} />
+                {num(quote.tien_dich_vu) > 0 && <BillRow label="Dịch vụ đi kèm" value={formatVND(quote.tien_dich_vu)} />}
+                {num(quote.giam_gia_moi) > 0 && (
+                  <BillRow label="Giảm giá thành viên" value={`-${formatVND(quote.giam_gia_moi)}`} tone="primary" />
+                )}
+                <BillRow label="Tổng hóa đơn mới" value={formatVND(quote.tong_moi)} bold />
+                <div className="border-t border-dashed border-border" />
+                <BillRow label="Đã thanh toán" value={formatVND(quote.da_thanh_toan)} />
+                {num(quote.da_thanh_toan) > 0 ? (
+                  num(quote.can_thanh_toan_them) > 0 ? (
+                    <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+                      <div className="flex justify-between items-center font-bold">
+                        <span>Cần thanh toán thêm (chênh lệch)</span>
+                        <span className="text-lg">{formatVND(quote.can_thanh_toan_them)}</span>
+                      </div>
+                      <p className="text-xs mt-1 opacity-80">
+                        {isStaff
+                          ? "Sau khi xác nhận, hệ thống cập nhật hóa đơn và gửi email yêu cầu khách thanh toán khoản chênh lệch này."
+                          : "Sau khi xác nhận, bạn sẽ được chuyển tới trang thanh toán để chuyển khoản phần chênh lệch."}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs">
+                      <strong>Không phải thanh toán thêm.</strong>{" "}
+                      {num(quote.da_thanh_toan) > num(quote.tong_moi) &&
+                        `Tổng mới thấp hơn số đã thanh toán ${formatVND(num(quote.da_thanh_toan) - num(quote.tong_moi))} — phần chênh lệch không được hoàn lại.`}
+                    </div>
+                  )
+                ) : (
+                  <div
+                    className={`p-3 rounded-xl border text-xs ${
+                      quote.can_thanh_toan_ngay
+                        ? "bg-amber-50 border-amber-200 text-amber-900"
+                        : "bg-emerald-50 border-emerald-200 text-emerald-800"
+                    }`}
+                  >
+                    {quote.can_thanh_toan_ngay
+                      ? `Đơn chưa thanh toán và giá mới cao hơn (${formatVND(quote.tong_cu)} → ${formatVND(quote.tong_moi)}). Sau khi đổi, bạn sẽ được chuyển tới trang thanh toán số tiền mới.`
+                      : "Đơn chưa thanh toán — bạn thanh toán theo hóa đơn mới; giá không tăng nên đổi lịch được ngay."}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {err && (
             <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm flex items-start gap-2">
               <AlertCircle size={16} className="shrink-0 mt-0.5" />
@@ -219,20 +318,34 @@ export default function RescheduleModal({ booking, onClose, onSuccess }: Props) 
             <button
               type="button"
               onClick={submit}
-              disabled={submitting || !startTime}
+              disabled={submitting || !startTime || !quote || quoteLoading}
               className="flex-1 py-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold disabled:opacity-50 shadow-lg shadow-primary/25 transition-all flex items-center justify-center gap-2"
             >
               {submitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" /> Đang lưu...
                 </>
+              ) : quote?.can_thanh_toan_ngay && !isStaff ? (
+                "Đổi lịch & thanh toán"
               ) : (
-                "Xác nhận đổi lịch"
+                <>
+                  {isStaff && num(quote?.can_thanh_toan_them) > 0 && <Mail className="w-4 h-4" />}
+                  Xác nhận đổi lịch
+                </>
               )}
             </button>
           </div>
         </div>
       </motion.div>
+    </div>
+  );
+}
+
+function BillRow({ label, value, bold, tone }: { label: string; value: string; bold?: boolean; tone?: "primary" }) {
+  return (
+    <div className={`flex justify-between gap-3 ${bold ? "font-bold text-foreground" : "text-muted-foreground"}`}>
+      <span>{label}</span>
+      <span className={tone === "primary" ? "text-primary font-semibold" : bold ? "" : "text-foreground"}>{value}</span>
     </div>
   );
 }

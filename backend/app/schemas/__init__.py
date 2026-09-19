@@ -138,6 +138,19 @@ class RefundInfoSubmit(BaseModel):
     ngan_hang_hoan_tien: str = Field(..., min_length=2)
 
 
+class RescheduleQuote(BaseModel):
+    """Bảng tính đổi lịch (dùng cho cả xem trước và kết quả)."""
+    tien_san_moi: Decimal
+    tien_dich_vu: Decimal
+    giam_gia_moi: Decimal
+    tong_cu: Decimal
+    tong_moi: Decimal
+    da_thanh_toan: Decimal
+    chenh_lech: Decimal  # tổng mới - đã thanh toán (âm/0 = không phải trả thêm)
+    can_thanh_toan_them: Decimal  # phần phải trả thêm (>= 0)
+    can_thanh_toan_ngay: bool  # true → chuyển khách sang trang thanh toán ngay sau khi đổi lịch
+
+
 class BookingReschedule(BaseModel):
     ngay_dat: date
     gio_bat_dau: time
@@ -171,6 +184,8 @@ class InvoiceSummary(BaseModel):
     giam_gia: Decimal
     tong_cong: Decimal
     trang_thai: PaymentStatus
+    so_tien_da_tt: Decimal = Decimal(0)  # đã thanh toán
+    so_tien_can_tt: Decimal = Decimal(0)  # còn phải thanh toán (đơn chờ thanh toán / chênh lệch sau đổi lịch)
 
     class Config:
         from_attributes = True
@@ -203,6 +218,7 @@ class BookingOut(BaseModel):
     da_doi_lich: bool = False
     ngay_doi_lich_gan_nhat: Optional[datetime] = None
     ngay_tao: datetime
+    han_thanh_toan: Optional[datetime] = None  # hạn thanh toán (UTC) — chỉ có khi đơn đang chờ thanh toán
     services: List[BookingServiceOut] = []
     invoice: Optional[InvoiceSummary] = None
 

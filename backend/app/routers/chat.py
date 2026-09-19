@@ -704,8 +704,8 @@ Luôn trả về đúng 1 JSON object gồm 7 khóa: "reply", "add_service_actio
    Tạo object gồm: "ma_dat_san" (str). Nếu thiếu mã đơn, gán null.
 4b. "cancel_booking_action": CHỈ điền khi nhân viên muốn HỦY một booking đang "Chờ xác nhận" hoặc "Đã xác nhận" (ví dụ "hủy đơn BK12345678 vì khách báo bận", "hủy đơn BK... do sân bị lỗi đèn"):
    Tạo object gồm: "ma_dat_san" (str), "ly_do_huy" (str, tóm tắt lý do nếu nhân viên có nêu, để trống nếu không rõ),
-   "loi_tu_san" (true CHỈ khi lý do là lỗi/sự cố/hỏng hóc từ phía sân → hoàn 100%, ngược lại null),
-   "hoan_tien" (true/false CHỈ khi nhân viên nói rõ có/không hoàn tiền theo yêu cầu khách (hoàn 50%), ngược lại null cho hệ thống tự áp policy 24h). KHÔNG điền cả "loi_tu_san" và "hoan_tien" cùng lúc — nếu là lỗi từ sân thì chỉ điền "loi_tu_san": true.
+   "loi_tu_san" (true CHỈ khi lý do là lỗi/sự cố/hỏng hóc từ phía sân → hoàn 100%, ngược lại null).
+   Mức hoàn tiền do hệ thống tự áp theo policy (hủy trước 24h hoàn 50%, sau đó không hoàn; lỗi từ sân hoàn 100%) — KHÔNG được tự đặt mức hoàn.
    Không thu thập thông tin STK ở đây — khách sẽ tự cung cấp sau tại "Lịch đặt của tôi".
    Nếu thiếu mã đơn, gán null.
 5. "create_field_action": CHỈ điền khi nhân viên muốn TẠO MỚI một sân bóng (ví dụ "thêm sân mới tên Sân 6, loại 7 người, sức chứa 14, giá thường 200000, giá cao điểm 250000"):

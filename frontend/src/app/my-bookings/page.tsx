@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import RescheduleModal from "@/components/RescheduleModal";
 import { apiGet, apiPost, formatVND, formatDate, getUser } from "@/lib/api";
-import { Calendar, Clock, MapPin, X, Star, AlertCircle, Loader2, RotateCcw, Ban, CheckCircle2, Receipt, CalendarClock } from "lucide-react";
+import { useCountdown } from "@/lib/countdown";
+import { Calendar, Clock, MapPin, X, Star, AlertCircle, Loader2, RotateCcw, Ban, CheckCircle2, Receipt, CalendarClock, CreditCard, Timer } from "lucide-react";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   CHO_XAC_NHAN: { text: "Chờ xác nhận", cls: "bg-amber-100 text-amber-800 border-amber-200" },
@@ -105,7 +106,9 @@ export default function MyBookingsPage() {
                 onFeedback={() => setFeedbackTarget(b)}
                 onViewBill={() => setBillTarget(b)}
                 onReschedule={() => setRescheduleTarget(b)}
-                onRefundUpdated={load} />
+                onRefundUpdated={load}
+                onPay={() => router.push(`/payment/${b.id}`)}
+                onExpired={load} />
             ))}
           </div>
         )}
@@ -126,7 +129,15 @@ export default function MyBookingsPage() {
         <RescheduleModal
           booking={rescheduleTarget}
           onClose={() => setRescheduleTarget(null)}
-          onSuccess={() => { setRescheduleTarget(null); load(); }}
+          onSuccess={(updated: any, quote: any) => {
+            setRescheduleTarget(null);
+            // Giá mới cao hơn số đã thanh toán → sang trang thanh toán như lúc đặt sân
+            if (quote?.can_thanh_toan_ngay) {
+              router.push(`/payment/${updated.id}`);
+              return;
+            }
+            load();
+          }}
         />
       )}
     </>
@@ -196,6 +207,20 @@ function InvoiceModal({ booking, onClose }: { booking: any; onClose: () => void 
               {formatVND(booking.invoice?.tong_cong || booking.tien_san)}
             </span>
           </div>
+          {parseFloat(booking.invoice?.so_tien_da_tt || 0) > 0 && (
+            <div className="-mt-3 space-y-1 text-sm">
+              <div className="flex justify-between text-slate-500">
+                <span>Đã thanh toán</span>
+                <span className="font-bold">{formatVND(booking.invoice.so_tien_da_tt)}</span>
+              </div>
+              {parseFloat(booking.invoice?.so_tien_can_tt || 0) > 0 && (
+                <div className="flex justify-between text-amber-600 font-black">
+                  <span>Còn phải thanh toán</span>
+                  <span>{formatVND(booking.invoice.so_tien_can_tt)}</span>
+                </div>
+              )}
+            </div>
+          )}
           <button
             onClick={onClose}
             className="w-full py-4 bg-slate-900 text-white font-black text-xs uppercase tracking-[0.2em] hover:bg-primary transition-colors"
@@ -327,12 +352,63 @@ function RefundStatusBox({ booking, onUpdated }: { booking: any; onUpdated: () =
   );
 }
 
-function BookingCard({ b, feedback, onCancel, onFeedback, onViewBill, onReschedule, onRefundUpdated }: any) {
+function PayBanner({ b, onPay, onExpired }: { b: any; onPay: () => void; onExpired: () => void }) {
+  const due = parseFloat(b.invoice?.so_tien_can_tt || 0);
+  const pending = b.trang_thai === "CHO_XAC_NHAN";
+  const cd = useCountdown(pending ? b.han_thanh_toan : null);
+
+  // Hết hạn → làm mới danh sách để hiển thị đơn đã bị hệ thống tự hủy
+  useEffect(() => {
+    if (pending && cd.active && cd.expired) {
+      const t = setTimeout(onExpired, 3000);
+      return () => clearTimeout(t);
+    }
+  }, [pending, cd.active, cd.expired]);
+
+  if (due <= 0 || !["CHO_XAC_NHAN", "DA_XAC_NHAN"].includes(b.trang_thai)) return null;
+
+  return (
+    <div className="mb-3 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex flex-wrap items-center gap-3">
+      <div className="flex-1 min-w-[200px]">
+        <div className="flex items-center gap-1.5 font-bold text-sm">
+          <CreditCard size={15} />
+          {pending ? "Vui lòng thanh toán để giữ sân" : "Cần thanh toán chênh lệch do đổi lịch"}
+        </div>
+        <div className="text-xs mt-1">
+          Số tiền: <strong>{formatVND(due)}</strong>
+          {pending && cd.active && (
+            <>
+              {" • "}
+              {cd.expired ? (
+                <span className="font-bold text-red-600">Đã hết hạn — đơn sắp bị hủy</span>
+              ) : (
+                <span className="inline-flex items-center gap-1 font-bold">
+                  <Timer size={12} /> còn {cd.text}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+      {!(pending && cd.expired) && (
+        <button
+          onClick={onPay}
+          className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold transition"
+        >
+          Thanh toán ngay
+        </button>
+      )}
+    </div>
+  );
+}
+
+function BookingCard({ b, feedback, onCancel, onFeedback, onViewBill, onReschedule, onRefundUpdated, onPay, onExpired }: any) {
   const st = STATUS_LABEL[b.trang_thai];
   const canCancel = ["CHO_XAC_NHAN", "DA_XAC_NHAN"].includes(b.trang_thai);
   const canReschedule = ["CHO_XAC_NHAN", "DA_XAC_NHAN"].includes(b.trang_thai);
   const canFeedback = b.trang_thai === "HOAN_THANH" && !feedback;
   const hoursUntil = (new Date(`${b.ngay_dat}T${b.gio_bat_dau}`).getTime() - Date.now()) / 3600000;
+  const paid = parseFloat(b.invoice?.so_tien_da_tt || 0);
 
   return (
     <div className="bg-card rounded-2xl border border-border p-5 hover:shadow-md transition">
@@ -359,6 +435,8 @@ function BookingCard({ b, feedback, onCancel, onFeedback, onViewBill, onReschedu
         <span className="flex items-center gap-1"><Calendar size={14} /> {formatDate(b.ngay_dat)}</span>
         <span className="flex items-center gap-1"><Clock size={14} /> {b.gio_bat_dau.slice(0, 5)} - {b.gio_ket_thuc.slice(0, 5)} ({b.so_gio}h)</span>
       </div>
+
+      <PayBanner b={b} onPay={onPay} onExpired={onExpired} />
 
       {/* Cancellation reason + refund status — 3 states: No Refund / Pending Refund / Refunded */}
       {b.trang_thai === "HUY" && (
@@ -413,7 +491,7 @@ function BookingCard({ b, feedback, onCancel, onFeedback, onViewBill, onReschedu
             <button onClick={onCancel}
               className="px-4 py-2 text-sm font-semibold text-destructive hover:bg-destructive/10 rounded-lg transition">
               <X size={14} className="inline mr-1" />
-              Hủy lịch {hoursUntil >= 24 ? "(hoàn 50%)" : "(không hoàn tiền)"}
+              Hủy lịch {paid <= 0 ? "" : hoursUntil >= 24 ? "(hoàn 50%)" : "(không hoàn tiền)"}
             </button>
           )}
           {canFeedback && (
@@ -433,8 +511,13 @@ function CancelModal({ booking, onClose, onSuccess }: any) {
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
-  const hoursUntil = (new Date(`${booking.ngay_dat}T${booking.gio_bat_dau}`).getTime() - Date.now()) / 3600000;
-  const willRefund = hoursUntil >= 24;
+  const startAt = new Date(`${booking.ngay_dat}T${booking.gio_bat_dau}`);
+  const hoursUntil = (startAt.getTime() - Date.now()) / 3600000;
+  const paid = parseFloat(booking.invoice?.so_tien_da_tt || 0);
+  // Mốc hoàn tiền: hủy TRƯỚC (giờ đá − 24h) được hoàn 50%, sau mốc này không hoàn
+  const cutoff = new Date(startAt.getTime() - 24 * 3600000);
+  const cutoffText = cutoff.toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+  const willRefund = paid > 0 && hoursUntil >= 24;
 
   async function submit() {
     if (reason.length < 3) {
@@ -462,9 +545,18 @@ function CancelModal({ booking, onClose, onSuccess }: any) {
       <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-800 mb-4 flex gap-2">
         <AlertCircle size={16} className="shrink-0 mt-0.5" />
         <div>
-          {willRefund
-            ? `Còn ${hoursUntil.toFixed(1)}h trước giờ chơi — được hoàn 50% tiền sân. Sau khi hủy, bạn sẽ cung cấp thông tin nhận hoàn tiền ngay tại đơn này.`
-            : `Còn ${hoursUntil.toFixed(1)}h trước giờ chơi — KHÔNG được hoàn tiền.`}
+          {paid <= 0 ? (
+            <>Đơn này chưa thanh toán nên không phát sinh khoản hoàn tiền.</>
+          ) : willRefund ? (
+            <>
+              Còn {hoursUntil.toFixed(1)}h trước giờ chơi (mốc hoàn tiền: trước <strong>{cutoffText}</strong>) — được hoàn{" "}
+              <strong>50% = {formatVND(paid * 0.5)}</strong> trên số tiền đã thanh toán. Sau khi hủy, bạn sẽ cung cấp thông tin nhận hoàn tiền ngay tại đơn này.
+            </>
+          ) : (
+            <>
+              Còn {Math.max(0, hoursUntil).toFixed(1)}h trước giờ chơi — đã qua mốc hoàn tiền ({cutoffText}), <strong>KHÔNG được hoàn tiền</strong>.
+            </>
+          )}
         </div>
       </div>
       <label className="block text-sm font-semibold mb-1.5">Lý do hủy</label>

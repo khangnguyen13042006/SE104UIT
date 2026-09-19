@@ -3,8 +3,9 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
-from app.core.config import BookingStatus, PaymentStatus
+from app.core.config import BookingStatus, PaymentStatus, PAYMENT_WINDOW_MINUTES
 from app.models import Booking, User, Field, Service
+from app.utils.helpers import payment_deadline
 
 SCAN_INTERVAL_SECONDS = 60 
 
@@ -21,6 +22,37 @@ async def reminder_loop():
         except Exception as e:
             print(f"[SCHEDULER ERROR] {e}")
 
+def cancel_expired_unpaid(db: Session, commit: bool = True) -> int:
+    """Hủy các đơn CHỜ XÁC NHẬN đã quá hạn thanh toán (mặc định PAYMENT_WINDOW_MINUTES = 30 phút kể từ lúc đặt).
+    Đơn chưa thanh toán nên không có khoản nào để hoàn. Trả về số đơn đã hủy."""
+    now_utc = datetime.utcnow()
+    pending = db.query(Booking).filter(Booking.trang_thai == BookingStatus.CHO_XAC_NHAN).all()
+    count = 0
+    for b in pending:
+        if payment_deadline(b) > now_utc:
+            continue
+        b.trang_thai = BookingStatus.HUY
+        b.ly_do_huy = f"Hệ thống tự động hủy đơn do quá {PAYMENT_WINDOW_MINUTES} phút chưa thanh toán."
+        b.hoan_tien = False
+        b.ty_le_hoan_tien = 0.0
+        b.ngay_huy = now_utc
+        b.han_thanh_toan = None
+        b.ghi_chu = (b.ghi_chu or "") + f"\n[AUTO-CANCEL {(now_utc + timedelta(hours=7)).strftime('%H:%M %d/%m/%Y')}] Quá hạn thanh toán"
+
+        # Trả lại tồn kho dịch vụ
+        for bs in b.booking_services:
+            if bs.dich_vu:
+                bs.dich_vu.ton_kho += bs.so_luong
+
+        if b.invoice and b.invoice.trang_thai == PaymentStatus.CHUA_THANH_TOAN:
+            b.invoice.trang_thai = PaymentStatus.HUY
+        print(f"[AUTO-CANCEL] Đã hủy đơn: {b.ma_dat_san or 'N/A'}")
+        count += 1
+    if commit:
+        db.commit()
+    return count
+
+
 def auto_clean_bookings():
     """Hủy đơn quá hạn và Hoàn thành đơn đã đá xong."""
     db = SessionLocal()
@@ -31,29 +63,8 @@ def auto_clean_bookings():
         # Lấy giờ Việt Nam hiện tại (UTC+7) để so sánh với ngày đặt sân (ngay_dat)
         now_vn = now_utc + timedelta(hours=7)
         
-        # --- 1. TỰ ĐỘNG HỦY: Đơn Chờ xác nhận quá 60 phút ---
-        # So sánh UTC với UTC để không bị lệch 7 tiếng
-        expiry_limit_utc = now_utc - timedelta(minutes=60)
-        
-        expired = db.query(Booking).filter(
-            Booking.trang_thai == BookingStatus.CHO_XAC_NHAN,
-            Booking.ngay_tao <= expiry_limit_utc
-        ).all()
-        
-        for b in expired:
-            b.trang_thai = BookingStatus.HUY
-            b.ly_do_huy = u"Hệ thống tự động hủy đơn sau 60 phút chờ thanh toán."
-            
-            # Cập nhật tồn kho dịch vụ
-            for bs in b.booking_services:
-                if bs.dich_vu:
-                    bs.dich_vu.ton_kho += bs.so_luong
-            
-            # Cập nhật trạng thái hóa đơn
-            if b.invoice and b.invoice.trang_thai == PaymentStatus.CHUA_THANH_TOAN:
-                b.invoice.trang_thai = PaymentStatus.HUY
-            
-            print(f"[AUTO-CANCEL] Đã hủy đơn: {b.ma_dat_san or 'N/A'}")
+        # --- 1. TỰ ĐỘNG HỦY: Đơn Chờ xác nhận quá hạn thanh toán (30 phút) ---
+        cancel_expired_unpaid(db, commit=False)
 
         # --- 2. TỰ ĐỘNG HOÀN THÀNH: Đơn Đã xác nhận khi qua giờ kết thúc ---
         # So sánh dựa trên ngày đặt (ngay_dat) và giờ Việt Nam (now_vn)

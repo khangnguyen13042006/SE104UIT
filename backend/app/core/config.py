@@ -63,6 +63,9 @@ class WorkStatus(str, Enum):
     TAM_NGHI = "TAM_NGHI"
     DA_NGHI = "DA_NGHI"
 
+# Thời gian giữ chỗ để khách thanh toán sau khi đặt sân online (phút). Quá hạn mà chưa thanh toán → tự hủy.
+PAYMENT_WINDOW_MINUTES = 30
+
 # Lương mặc định mỗi ca (VND) — dùng cho ca cũ chưa có snapshot lương và nhân viên mới
 DEFAULT_LUONG_CA = 100_000
 

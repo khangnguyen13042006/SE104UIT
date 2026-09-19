@@ -157,7 +157,25 @@ def send_booking_rescheduled_email(
     gio_bat_dau_moi: time,
     gio_ket_thuc_moi: time,
     tong_cong: Union[Decimal, float, int],
+    da_thanh_toan: Union[Decimal, float, int] = 0,
+    can_thanh_toan_them: Union[Decimal, float, int] = 0,
 ) -> None:
+    paid_row = (
+        f'<tr><td style="padding:6px 0; color:#888;">Đã thanh toán</td><td style="padding:6px 0; text-align:right;">{int(da_thanh_toan):,}đ</td></tr>'
+        if da_thanh_toan and int(da_thanh_toan) > 0 else ""
+    )
+    if can_thanh_toan_them and int(can_thanh_toan_them) > 0:
+        due_row = (
+            f'<tr><td style="padding:6px 0; color:#b45309; font-weight:bold;">Cần thanh toán thêm</td>'
+            f'<td style="padding:6px 0; text-align:right; font-weight:bold; color:#b45309;">{int(can_thanh_toan_them):,}đ</td></tr>'
+        )
+        pay_note = (
+            '<p style="background:#fffbeb; border:1px solid #fcd34d; border-radius:8px; padding:12px; color:#92400e;">'
+            f'Khung giờ mới có giá cao hơn nên bạn cần thanh toán thêm <strong>{int(can_thanh_toan_them):,}đ</strong>. '
+            'Vui lòng đăng nhập, vào mục "Lịch đặt của tôi" và bấm nút "Thanh toán" ở đơn này để hoàn tất.</p>'
+        )
+    else:
+        due_row, pay_note = "", ""
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color:#1a1a1a;">
       <h2 style="color:#0ea5e9;">Đơn đặt sân đã được đổi lịch</h2>
@@ -168,7 +186,10 @@ def send_booking_rescheduled_email(
         <tr><td style="padding:6px 0; color:#888;">Lịch cũ</td><td style="padding:6px 0; text-align:right; text-decoration:line-through; color:#999;">{ngay_dat_cu.strftime('%d/%m/%Y')} {gio_bat_dau_cu.strftime('%H:%M')}-{gio_ket_thuc_cu.strftime('%H:%M')}</td></tr>
         <tr><td style="padding:6px 0; color:#888;">Lịch mới</td><td style="padding:6px 0; text-align:right; font-weight:bold; color:#0ea5e9;">{ngay_dat_moi.strftime('%d/%m/%Y')} {gio_bat_dau_moi.strftime('%H:%M')}-{gio_ket_thuc_moi.strftime('%H:%M')}</td></tr>
         <tr><td style="padding:6px 0; color:#888;">Tổng tiền (đã cập nhật)</td><td style="padding:6px 0; text-align:right; font-weight:bold;">{int(tong_cong):,}đ</td></tr>
+        {paid_row}
+        {due_row}
       </table>
+      {pay_note}
       <p style="color:#888; font-size: 12px;">Nếu bạn không yêu cầu đổi lịch này, vui lòng liên hệ Sân Bóng UIT ngay.</p>
     </div>
     """

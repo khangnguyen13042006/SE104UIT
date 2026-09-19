@@ -15,14 +15,15 @@ from app.core.database import get_db
 from app.core.security import get_current_user, get_current_user_optional, require_roles
 from app.core.config import (
     UserRole, BookingStatus, FieldStatus, ServiceStatus,
-    PaymentMethod, PaymentStatus
+    PaymentMethod, PaymentStatus, PAYMENT_WINDOW_MINUTES
 )
 from app.models import Booking, Field, User, Service, BookingService, Invoice
-from app.schemas import BookingCreate, BookingCancel, BookingReschedule, BookingOut, BookingServiceOut, RefundInfoSubmit
+from app.schemas import BookingCreate, BookingCancel, BookingReschedule, BookingOut, BookingServiceOut, RefundInfoSubmit, RescheduleQuote
 from app.utils.helpers import (
     generate_code, calculate_hours, calculate_field_price,
     has_booking_conflict, get_active_membership, get_discount_rate,
     is_valid_booking_time, calculate_lifetime_spend, calculate_tier_from_spend,
+    amount_paid, payment_due, payment_deadline, mark_invoice_paid,
 )
 from app.utils.mailer import send_booking_success_email, send_booking_cancelled_email, send_booking_rescheduled_email, send_refund_completed_email
 
@@ -42,7 +43,7 @@ def _refund_rate(b: Booking) -> float:
 
 
 def _refund_amount(b: Booking) -> Decimal:
-    base = b.invoice.tong_cong if b.invoice else b.tien_san
+    base = amount_paid(b) if b.invoice else b.tien_san  # hoàn trên số tiền khách đã thanh toán thực tế
     return (Decimal(str(base)) * Decimal(str(_refund_rate(b)))).quantize(Decimal("1"))
 
 
@@ -73,6 +74,8 @@ def _booking_to_out(b: Booking) -> dict:
             "giam_gia": b.invoice.giam_gia,
             "tong_cong": b.invoice.tong_cong,
             "trang_thai": b.invoice.trang_thai,
+            "so_tien_da_tt": amount_paid(b),
+            "so_tien_can_tt": payment_due(b),
         }
 
     return {
@@ -102,6 +105,7 @@ def _booking_to_out(b: Booking) -> dict:
         "da_doi_lich": b.da_doi_lich,
         "ngay_doi_lich_gan_nhat": b.ngay_doi_lich_gan_nhat,
         "ngay_tao": b.ngay_tao,
+        "han_thanh_toan": payment_deadline(b) if b.trang_thai == BookingStatus.CHO_XAC_NHAN else None,
         "services": services_out,
         "invoice": invoice_data,
     }
@@ -187,6 +191,7 @@ def create_booking(
         hinh_thuc_thanh_toan=payload.hinh_thuc_thanh_toan,
         trang_thai=BookingStatus.DA_XAC_NHAN if is_offline else BookingStatus.CHO_XAC_NHAN,
         nguoi_tao_id=current_user.id if current_user else None,
+        han_thanh_toan=None if is_offline else datetime.utcnow() + timedelta(minutes=PAYMENT_WINDOW_MINUTES),
     )
     db.add(booking)
     db.flush()
@@ -247,6 +252,7 @@ def create_booking(
         tong_cong=tong_cong,
         hinh_thuc_thanh_toan=payload.hinh_thuc_thanh_toan,
         trang_thai=PaymentStatus.CHUA_THANH_TOAN,
+        so_tien_da_tt=Decimal(0),
     )
     db.add(invoice)
     db.commit()
@@ -367,10 +373,13 @@ def confirm_booking(
         raise HTTPException(400, "Chỉ có thể xác nhận đơn đang chờ")
     
     b.trang_thai = BookingStatus.DA_XAC_NHAN
+    mark_invoice_paid(b)  # nhân viên xác nhận đã nhận tiền
     db.commit()
     db.refresh(b)
     _send_booking_confirmed_email(b)
     return _booking_to_out(b)
+
+
 @router.post("/{booking_id}/cancel", response_model=BookingOut)
 def cancel_booking(
     booking_id: int,
@@ -386,39 +395,38 @@ def cancel_booking(
     if b.trang_thai in (BookingStatus.HUY, BookingStatus.HOAN_THANH, BookingStatus.DANG_SU_DUNG):
         raise HTTPException(400, "Booking không thể hủy ở trạng thái hiện tại")
 
-    # Tính giờ còn lại (dùng để mặc định nếu admin/staff không chọn override)
-    now = datetime.now()
-    booking_dt = datetime.combine(b.ngay_dat, b.gio_bat_dau)
-    hours_until = (booking_dt - now).total_seconds() / 3600
+    # Số giờ còn lại tới giờ đá (giờ Việt Nam, khớp với ngay_dat/gio_bat_dau đang lưu theo giờ VN)
+    now_vn = datetime.utcnow() + timedelta(hours=7)
+    hours_until = (datetime.combine(b.ngay_dat, b.gio_bat_dau) - now_vn).total_seconds() / 3600
 
-    # ROLE-BASED REFUND LOGIC:
-    # - Admin/Quản lý: được set loi_tu_san=True (lỗi/sự cố từ sân) → hoàn 100%, bất kể mốc 24h.
-    # - Admin/Quản lý/Nhân viên: được set hoan_tien=True/False thủ công (hoàn theo yêu cầu khách, 50%/0%).
-    # - Khách hàng: KHÔNG được set; server tự tính theo policy 24h.
-    # Thông tin STK nhận hoàn tiền KHÔNG thu thập ở bước hủy — khách tự cung cấp sau tại "Lịch đặt của tôi".
-    is_staff = user.vai_tro in (UserRole.ADMIN, UserRole.QUAN_LY, UserRole.NHAN_VIEN)
+    # CHÍNH SÁCH HOÀN TIỀN (tự động, không ai được chỉnh tay):
+    # - Lỗi từ phía sân (chỉ Admin/Quản lý được đánh dấu loi_tu_san) → hoàn 100% bất kể thời điểm hủy.
+    # - Còn từ 24h trở lên trước giờ đá → hoàn 50%.
+    # - Dưới 24h → không hoàn.
+    # Tiền hoàn tính trên số tiền khách ĐÃ THANH TOÁN; chưa thanh toán thì không có gì để hoàn.
+    # STK nhận hoàn tiền khách tự cung cấp sau tại "Lịch đặt của tôi".
     is_manager = user.vai_tro in (UserRole.ADMIN, UserRole.QUAN_LY)
+    paid = amount_paid(b)
     if is_manager and payload.loi_tu_san:
-        # Lỗi từ phía sân (sự cố, hỏng hóc...) → hoàn 100% bất kể thời điểm hủy
-        hoan_tien = True
         refund_rate = 1.0
         refund_note = f"[LỖI TỪ SÂN - HOÀN 100% BỞI {user.ho_ten}]"
-    elif is_staff and payload.hoan_tien is not None:
-        # Staff quyết định theo yêu cầu khách: hoàn 50% hoặc không hoàn
-        hoan_tien = payload.hoan_tien
-        refund_rate = 0.5 if hoan_tien else 0.0
-        refund_note = f"[QUYẾT ĐỊNH BỞI {user.ho_ten}]"
+    elif hours_until >= 24:
+        refund_rate = 0.5
+        refund_note = "[Hủy trước 24h - hoàn 50% theo policy]"
     else:
-        # Customer hoặc staff không override → áp policy 24h tự động
-        hoan_tien = hours_until >= 24
-        refund_rate = 0.5 if hoan_tien else 0.0
-        refund_note = "[Tự động theo policy 24h]"
+        refund_rate = 0.0
+        refund_note = "[Hủy trong vòng 24h - không hoàn theo policy]"
+    if paid <= 0:
+        refund_rate = 0.0
+        refund_note = "[Đơn chưa thanh toán - không có khoản hoàn]"
+    hoan_tien = refund_rate > 0
 
     b.trang_thai = BookingStatus.HUY
     b.ly_do_huy = payload.ly_do_huy
     b.hoan_tien = hoan_tien
-    b.ty_le_hoan_tien = refund_rate if hoan_tien else 0.0
+    b.ty_le_hoan_tien = refund_rate
     b.ngay_huy = datetime.utcnow()
+    b.han_thanh_toan = None
 
     # Hoàn dịch vụ vào kho (đặc biệt cho thuê giày...)
     for bs in b.booking_services:
@@ -427,12 +435,16 @@ def cancel_booking(
 
     # Update invoice
     if b.invoice:
-        if refund_rate > 0:
+        b.invoice.so_tien_da_tt = paid  # chốt số tiền đã trả để tính hoàn tiền về sau
+        b.invoice.chenh_lech_cho_tt = Decimal(0)
+        refund_amount = (paid * Decimal(str(refund_rate))).quantize(Decimal("1"))
+        if hoan_tien:
             # Đặt trạng thái CHỜ HOÀN TIỀN, staff phải confirm bằng action riêng
             b.invoice.trang_thai = PaymentStatus.CHO_HOAN_TIEN
-            refund_amount = (b.invoice.tong_cong * Decimal(str(refund_rate))).quantize(Decimal("1"))
             b.ghi_chu = (b.ghi_chu or "") + f"\n[Chờ hoàn {refund_amount}đ ({int(refund_rate*100)}%)] {refund_note}"
-        elif not hoan_tien:
+        else:
+            if paid <= 0:
+                b.invoice.trang_thai = PaymentStatus.HUY
             b.ghi_chu = (b.ghi_chu or "") + f"\n[Không hoàn tiền] {refund_note}"
 
     db.commit()
@@ -477,19 +489,8 @@ def submit_refund_info(
     return _booking_to_out(b)
 
 
-@router.put("/{booking_id}/reschedule", response_model=BookingOut)
-def reschedule_booking(
-    booking_id: int,
-    payload: BookingReschedule,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """Đổi ngày/giờ của một booking đang chờ hoặc đã xác nhận sang một khung giờ trống khác."""
-    b = db.query(Booking).filter(Booking.id == booking_id).first()
-    if not b:
-        raise HTTPException(404, "Không tìm thấy booking")
-    if user.vai_tro == UserRole.KHACH_HANG and b.khach_hang_id != user.id:
-        raise HTTPException(403, "Bạn không có quyền đổi lịch booking này")
+def _reschedule_quote(db: Session, b: Booking, payload: BookingReschedule) -> dict:
+    """Kiểm tra khung giờ mới và tính bảng giá đổi lịch (không ghi DB). Dùng chung cho xem trước và áp dụng."""
     if b.trang_thai not in (BookingStatus.CHO_XAC_NHAN, BookingStatus.DA_XAC_NHAN):
         raise HTTPException(400, "Chỉ có thể đổi lịch khi đơn đang chờ xác nhận hoặc đã xác nhận")
 
@@ -509,9 +510,7 @@ def reschedule_booking(
     ):
         raise HTTPException(409, "Khung giờ mới đã có người đặt, vui lòng chọn khung khác")
 
-    field = b.san
-    so_gio_moi = calculate_hours(payload.gio_bat_dau, payload.gio_ket_thuc)
-    tien_san_moi = calculate_field_price(field, payload.gio_bat_dau, payload.gio_ket_thuc)
+    tien_san_moi = calculate_field_price(b.san, payload.gio_bat_dau, payload.gio_ket_thuc)
 
     # Tính lại giảm giá (nếu có) trên tiền sân mới, theo đúng hạng hiện tại của khách
     giam_gia_moi = Decimal(0)
@@ -528,13 +527,72 @@ def reschedule_booking(
         if best_rate > 0:
             giam_gia_moi = (tien_san_moi * Decimal(str(best_rate))).quantize(Decimal("1"))
 
+    tien_dv = Decimal(b.invoice.tien_dich_vu or 0) if b.invoice else Decimal(0)
+    tong_cu = Decimal(b.invoice.tong_cong) if b.invoice else Decimal(b.tien_san)
+    tong_moi = tien_san_moi + tien_dv - giam_gia_moi
+    paid = amount_paid(b)
+    chenh = tong_moi - paid
+    # Đơn đã thanh toán mà tổng mới cao hơn → phải trả thêm phần chênh lệch.
+    # Đơn chưa thanh toán (chờ xác nhận) → khách sẽ thanh toán tổng mới theo luồng đặt sân bình thường.
+    can_them = max(Decimal(0), chenh) if paid > 0 else Decimal(0)
+    can_thanh_toan_ngay = can_them > 0 or (b.trang_thai == BookingStatus.CHO_XAC_NHAN and tong_moi > tong_cu)
+    return {
+        "so_gio_moi": calculate_hours(payload.gio_bat_dau, payload.gio_ket_thuc),
+        "tien_san_moi": tien_san_moi,
+        "tien_dich_vu": tien_dv,
+        "giam_gia_moi": giam_gia_moi,
+        "tong_cu": tong_cu,
+        "tong_moi": tong_moi,
+        "da_thanh_toan": paid,
+        "chenh_lech": chenh,
+        "can_thanh_toan_them": can_them,
+        "can_thanh_toan_ngay": can_thanh_toan_ngay,
+    }
+
+
+def _get_reschedulable_booking(db: Session, booking_id: int, user: User) -> Booking:
+    b = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not b:
+        raise HTTPException(404, "Không tìm thấy booking")
+    if user.vai_tro == UserRole.KHACH_HANG and b.khach_hang_id != user.id:
+        raise HTTPException(403, "Bạn không có quyền đổi lịch booking này")
+    return b
+
+
+@router.post("/{booking_id}/reschedule-preview", response_model=RescheduleQuote)
+def reschedule_preview(
+    booking_id: int,
+    payload: BookingReschedule,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Xem trước hóa đơn đổi lịch: tiền sân mới, đã thanh toán, chênh lệch cần thanh toán thêm."""
+    b = _get_reschedulable_booking(db, booking_id, user)
+    return _reschedule_quote(db, b, payload)
+
+
+@router.put("/{booking_id}/reschedule", response_model=BookingOut)
+def reschedule_booking(
+    booking_id: int,
+    payload: BookingReschedule,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Đổi ngày/giờ của một booking đang chờ hoặc đã xác nhận sang một khung giờ trống khác.
+    - Tổng mới <= số đã thanh toán: đổi luôn.
+    - Tổng mới > số đã thanh toán: đổi luôn + hóa đơn ghi nhận khoản chênh lệch phải thanh toán thêm,
+      gửi email yêu cầu khách thanh toán."""
+    b = _get_reschedulable_booking(db, booking_id, user)
+    q = _reschedule_quote(db, b, payload)
+    field = b.san
+
     old_ngay_dat, old_gio_bat_dau, old_gio_ket_thuc = b.ngay_dat, b.gio_bat_dau, b.gio_ket_thuc
     old_info = f"{old_ngay_dat} {old_gio_bat_dau.strftime('%H:%M')}-{old_gio_ket_thuc.strftime('%H:%M')}"
     b.ngay_dat = payload.ngay_dat
     b.gio_bat_dau = payload.gio_bat_dau
     b.gio_ket_thuc = payload.gio_ket_thuc
-    b.so_gio = so_gio_moi
-    b.tien_san = tien_san_moi
+    b.so_gio = q["so_gio_moi"]
+    b.tien_san = q["tien_san_moi"]
     b.da_doi_lich = True
     b.ngay_doi_lich_gan_nhat = datetime.utcnow()
 
@@ -542,12 +600,25 @@ def reschedule_booking(
         f"[ĐỔI LỊCH {datetime.now().strftime('%H:%M %d/%m')}] Từ {old_info} sang "
         f"{payload.ngay_dat} {payload.gio_bat_dau.strftime('%H:%M')}-{payload.gio_ket_thuc.strftime('%H:%M')} bởi {user.ho_ten}"
     )
+    if q["can_thanh_toan_them"] > 0:
+        note += f" | Cần thanh toán thêm {int(q['can_thanh_toan_them']):,}đ"
+    elif q["da_thanh_toan"] > q["tong_moi"]:
+        note += f" | Tổng mới thấp hơn số đã thanh toán {int(q['da_thanh_toan'] - q['tong_moi']):,}đ, không hoàn phần chênh lệch"
     b.ghi_chu = (b.ghi_chu + "\n" + note) if b.ghi_chu else note
 
     if b.invoice:
-        b.invoice.tien_san = tien_san_moi
-        b.invoice.giam_gia = giam_gia_moi
-        b.invoice.tong_cong = tien_san_moi + (b.invoice.tien_dich_vu or Decimal(0)) - giam_gia_moi
+        b.invoice.tien_san = q["tien_san_moi"]
+        b.invoice.giam_gia = q["giam_gia_moi"]
+        b.invoice.tong_cong = q["tong_moi"]
+        if q["can_thanh_toan_them"] > 0:
+            b.invoice.chenh_lech_cho_tt = q["can_thanh_toan_them"]
+            b.invoice.trang_thai = PaymentStatus.CHUA_THANH_TOAN
+        elif q["da_thanh_toan"] > 0:
+            # Đã trả đủ (hoặc dư) cho tổng mới → hóa đơn coi như đã thanh toán, xóa khoản chênh lệch cũ nếu có
+            b.invoice.chenh_lech_cho_tt = Decimal(0)
+            b.invoice.trang_thai = PaymentStatus.DA_THANH_TOAN
+            if b.invoice.so_tien_da_tt is None:
+                b.invoice.so_tien_da_tt = q["da_thanh_toan"]
 
     db.commit()
     db.refresh(b)
@@ -564,6 +635,8 @@ def reschedule_booking(
         gio_bat_dau_moi=b.gio_bat_dau,
         gio_ket_thuc_moi=b.gio_ket_thuc,
         tong_cong=b.invoice.tong_cong if b.invoice else b.tien_san,
+        da_thanh_toan=q["da_thanh_toan"],
+        can_thanh_toan_them=q["can_thanh_toan_them"],
     )
     return _booking_to_out(b)
 
@@ -717,6 +790,7 @@ def create_guest_booking(payload: GuestBookingCreate, db: Session = Depends(get_
         ghi_chu=payload.ghi_chu,
         hinh_thuc_thanh_toan=PaymentMethod.CHUYEN_KHOAN,
         trang_thai=BookingStatus.CHO_XAC_NHAN,
+        han_thanh_toan=datetime.utcnow() + timedelta(minutes=PAYMENT_WINDOW_MINUTES),
     )
     db.add(booking)
     db.flush()
@@ -764,6 +838,7 @@ def create_guest_booking(payload: GuestBookingCreate, db: Session = Depends(get_
         giam_gia=giam_gia, tong_cong=tong_cong,
         hinh_thuc_thanh_toan=PaymentMethod.CHUYEN_KHOAN,
         trang_thai=PaymentStatus.CHUA_THANH_TOAN,
+        so_tien_da_tt=Decimal(0),
     ))
     db.commit()
     db.refresh(booking)
@@ -921,7 +996,9 @@ async def verify_receipt(
     if not b:
         raise HTTPException(404, "Không tìm thấy đơn đặt sân")
 
-    if b.trang_thai == BookingStatus.DA_XAC_NHAN:
+    was_pending = b.trang_thai == BookingStatus.CHO_XAC_NHAN
+    due_amount = payment_due(b)
+    if b.trang_thai == BookingStatus.DA_XAC_NHAN and due_amount <= 0:
         return {
             "success": True,
             "already_confirmed": True,
@@ -929,8 +1006,8 @@ async def verify_receipt(
             "booking": _booking_to_out(b),
         }
 
-    if b.trang_thai in (BookingStatus.HUY, BookingStatus.HOAN_THANH):
-        raise HTTPException(400, f"Đơn đặt sân đang ở trạng thái '{b.trang_thai}', không thể xác thực biên lai.")
+    if b.trang_thai in (BookingStatus.HUY, BookingStatus.HOAN_THANH, BookingStatus.DANG_SU_DUNG) or due_amount <= 0:
+        raise HTTPException(400, f"Đơn đặt sân đang ở trạng thái '{b.trang_thai}', không có khoản nào cần thanh toán.")
 
     # 1. Đọc và kiểm tra file ảnh
     contents = await file.read()
@@ -956,8 +1033,8 @@ async def verify_receipt(
 
     # 2. Tính toán giá trị kỳ vọng của đơn đặt sân
     expected_code = b.ma_dat_san
-    if b.invoice and b.invoice.tong_cong:
-        expected_amount = float(b.invoice.tong_cong)
+    if due_amount > 0:
+        expected_amount = float(due_amount)  # đơn chờ thanh toán: cả hóa đơn; đơn đã xác nhận: phần chênh lệch sau đổi lịch
     else:
         svc_total = sum(float(bs.thanh_tien) for bs in b.booking_services)
         expected_amount = float(b.tien_san) + svc_total
@@ -1098,13 +1175,13 @@ Cấu trúc JSON:
     if is_receipt and is_success and name_ok and amount_ok and content_ok:
         # === TỰ ĐỘNG CHUYỂN TRẠNG THÁI SANG ĐÃ XÁC NHẬN ===
         b.trang_thai = BookingStatus.DA_XAC_NHAN
+        mark_invoice_paid(b)
         if b.invoice:
-            b.invoice.trang_thai = PaymentStatus.DA_THANH_TOAN
             b.invoice.hinh_thuc_thanh_toan = PaymentMethod.CHUYEN_KHOAN
 
         audit = (
             f"[AI XÁC THỰC BILL TỰ ĐỘNG THÀNH CÔNG] "
-            f"Số tiền: {transferred_amt:,.0f}đ (Đủ {expected_amount:,.0f}đ) | "
+            f"Số tiền: {transferred_amt:,.0f}đ (Đủ {expected_amount:,.0f}đ{' - thanh toán chênh lệch đổi lịch' if not was_pending else ''}) | "
             f"Người nhận: '{recip_name}' | "
             f"ND: '{trans_content}' | "
             f"Ảnh: {receipt_web_url} lúc {datetime.now().strftime('%H:%M %d/%m/%Y')}"
@@ -1156,27 +1233,9 @@ def run_auto_tasks(
     """(Admin) Quét thủ công: Hủy booking quá 60p và Hoàn thành booking quá giờ."""
     now = datetime.now()
     
-    # 1. AUTO-CANCEL: Hủy booking "Chờ xác nhận" đã quá 60 phút
-    sixty_mins_ago = now - timedelta(minutes=60)
-    expired_bookings = db.query(Booking).filter(
-        Booking.trang_thai == BookingStatus.CHO_XAC_NHAN,
-        Booking.ngay_tao <= sixty_mins_ago
-    ).all()
-    
-    canceled_count = 0
-    for b in expired_bookings:
-        b.trang_thai = BookingStatus.HUY
-        b.ly_do_huy = "Tự động hủy do quá 60 phút không xác nhận thanh toán."
-        b.hoan_tien = False # Không hoàn tiền
-        
-        # Hoàn lại số lượng dịch vụ vào kho
-        for bs in b.booking_services:
-            if bs.dich_vu:
-                bs.dich_vu.ton_kho += bs.so_luong
-                
-        # Cập nhật ghi chú
-        b.ghi_chu = (b.ghi_chu or "") + f"\n[AUTO-CANCEL {now.strftime('%H:%M %d/%m/%Y')}]"
-        canceled_count += 1
+    # 1. AUTO-CANCEL: Hủy booking "Chờ xác nhận" quá hạn thanh toán (dùng chung logic với scheduler)
+    from app.utils.scheduler import cancel_expired_unpaid
+    canceled_count = cancel_expired_unpaid(db)
 
     # 2. AUTO-COMPLETE: Đánh dấu "Hoàn thành" booking "Đã xác nhận" đã qua thời gian kết thúc
     past_bookings = db.query(Booking).filter(

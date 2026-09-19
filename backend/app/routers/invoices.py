@@ -8,6 +8,7 @@ from app.core.config import UserRole, PaymentStatus, BookingStatus
 from app.models import Invoice, User, Booking
 from app.schemas import InvoiceOut, InvoicePayment
 from app.utils.mailer import send_booking_success_email
+from app.utils.helpers import mark_invoice_paid
 
 router = APIRouter(prefix="/api/invoices", tags=["Invoices"])
 
@@ -54,7 +55,10 @@ def pay_invoice(
         raise HTTPException(404, "Không tìm thấy hóa đơn")
     if inv.trang_thai == PaymentStatus.DA_THANH_TOAN:
         raise HTTPException(400, "Hóa đơn đã thanh toán")
-    inv.trang_thai = PaymentStatus.DA_THANH_TOAN
+    if inv.booking:
+        mark_invoice_paid(inv.booking)  # DA_THANH_TOAN + ghi nhận số tiền đã trả
+    else:
+        inv.trang_thai = PaymentStatus.DA_THANH_TOAN
     # Auto-confirm booking
     just_confirmed = bool(inv.booking and inv.booking.trang_thai == BookingStatus.CHO_XAC_NHAN)
     if just_confirmed:
