@@ -463,6 +463,12 @@ export default function BookingsAdmin() {
                         <td className="py-3 text-right font-bold">{formatVND(s.thanh_tien)}</td>
                       </tr>
                     ))}
+                    {billTarget.invoice?.giam_gia > 0 && (
+                      <tr>
+                        <td className="py-3 text-primary italic">Giảm giá thành viên</td>
+                        <td className="py-3 text-right font-bold text-primary">-{formatVND(billTarget.invoice.giam_gia)}</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
                 <div className="pt-6 border-t-2 border-slate-900 flex justify-between items-center">

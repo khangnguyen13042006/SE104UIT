@@ -76,9 +76,9 @@
 }
 
 @theme inline {
-  --font-sans: "Times New Roman", Times, serif;
-  --font-mono: "Times New Roman", Times, serif;
-  --font-display: "Times New Roman", Times, serif;
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
   
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -119,14 +119,9 @@
 }
 
 @layer base {
-  /* Ép font cho tất cả các thẻ và cả các pseudo-elements */
-  *, ::before, ::after {
-    font-family: "Times New Roman", Times, serif !important;
-  }
-
   body {
     @apply bg-background text-foreground;
-    font-family: "Times New Roman", Times, serif !important;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     overscroll-behavior-y: none;
     min-height: 100vh;
   }
@@ -188,6 +183,22 @@
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
+/* Ken Burns: zoom/pan chậm liên tục cho ảnh sân, tạo cảm giác chuyển động thay vì ảnh tĩnh */
+@keyframes ken-burns {
+  0% { transform: scale(1) translate(0, 0); }
+  50% { transform: scale(1.12) translate(-1.5%, -1%); }
+  100% { transform: scale(1) translate(0, 0); }
+}
+.ken-burns {
+  animation: ken-burns 18s ease-in-out infinite;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ken-burns {
+    animation: none;
+  }
+}
+
 /* Smooth page transitions */
 .page-transition {
   @apply transition-all duration-300 ease-out;
@@ -200,8 +211,52 @@
 .card-hover:hover {
   @apply -translate-y-1 shadow-xl;
 }
-@layer base {
-  html, body, h1, h2, h3, h4, h5, h6, span, button, input, textarea, select {
-    font-family: "Times New Roman", Times, serif !important;
-  }
+/* 3D and Perspective utilities */
+.perspective-800 {
+  perspective: 800px;
 }
+.perspective-1000 {
+  perspective: 1000px;
+}
+.perspective-1500 {
+  perspective: 1500px;
+}
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+.backface-hidden {
+  backface-visibility: hidden;
+}
+
+/* Glassmorphism & Glow utilities */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.dark .glass-panel {
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.glow-primary {
+  box-shadow: 0 0 25px -4px oklch(0.65 0.2 155 / 0.35);
+}
+
+.glow-accent {
+  box-shadow: 0 0 25px -4px oklch(0.75 0.18 85 / 0.35);
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+

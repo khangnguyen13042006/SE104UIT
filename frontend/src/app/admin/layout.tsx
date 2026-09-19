@@ -8,7 +8,7 @@ import { apiGet, getUser, clearToken, formatVND } from "@/lib/api";
 import {
   LayoutDashboard, Calendar, MapPin, Package, Users, ClipboardList,
   Star, FileBarChart, LogOut, Menu, X, Zap, ChevronRight, Bell,
-  CheckCircle2, Clock, AlertCircle
+  CheckCircle2, Clock, AlertCircle, UserCog
 } from "lucide-react";
 
 const MENU = [
@@ -17,6 +17,7 @@ const MENU = [
   { href: "/admin/fields", icon: MapPin, label: "Quản Lý Sân", roles: ["ADMIN", "QUAN_LY"] },
   { href: "/admin/services", icon: Package, label: "Dịch Vụ", roles: ["ADMIN", "QUAN_LY"] },
   { href: "/admin/users", icon: Users, label: "Tài Khoản", roles: ["ADMIN"] },
+  { href: "/admin/staff", icon: UserCog, label: "Nhân Viên", roles: ["ADMIN", "QUAN_LY"] },
   { href: "/admin/shifts", icon: ClipboardList, label: "Phân Ca", roles: ["ADMIN", "QUAN_LY", "NHAN_VIEN"] },
   { href: "/admin/feedbacks", icon: Star, label: "Đánh Giá", roles: ["ADMIN", "QUAN_LY"] },
   { href: "/admin/reports", icon: FileBarChart, label: "Báo Cáo", roles: ["ADMIN", "QUAN_LY"] },

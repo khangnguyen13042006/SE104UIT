@@ -3,17 +3,18 @@ import { useEffect, useMemo, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "@/components/Navbar";
+import Field3DShowcase, { Field } from "@/components/Field3DShowcase";
 import { apiGet, apiPost, formatVND, getUser } from "@/lib/api";
 import { 
   AlertCircle, CheckCircle2, MapPin, Phone, User, Mail, 
   Wifi, Loader2, Clock, Users, Zap, ChevronRight,
-  Star, Calendar, Sparkles
+  Star, Calendar, Sparkles, Sun, Sunset, Moon
 } from "lucide-react";
 
 const START_TIMES: string[] = [];
 for (let h = 6; h <= 22; h++) {
-  for (const m of [0, 30]) {
-    if (h === 22 && m === 30) continue;
+  for (const m of [0, 15, 30, 45]) {
+    if (h === 22 && m > 0) continue;
     START_TIMES.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
   }
 }
@@ -28,16 +29,7 @@ function addDuration(start: string, hours: number): string {
   return `${String(eh).padStart(2, "0")}:${String(em).padStart(2, "0")}`;
 }
 
-type Field = {
-  id: number;
-  ten_san: string;
-  loai_san: string;
-  suc_chua: number;
-  gia_tieu_chuan: number;
-  gia_cao_diem: number;
-  mo_ta: string | null;
-  trang_thai: string;
-};
+// Field type imported from Field3DShowcase
 
 type Service = {
   id: number;
@@ -100,10 +92,21 @@ function BookingContent() {
   const [err, setErr] = useState("");
   const [loadErr, setLoadErr] = useState("");
   const [memberStatus, setMemberStatus] = useState<{ tier: string; tier_name: string; discount_percent: number } | null>(null);
+  const [timeFilter, setTimeFilter] = useState<"all" | "morning" | "afternoon" | "evening">("all");
 
   // Trạng thái hỗ trợ tự động điền từ Chatbot
   const [aiAppliedNotice, setAiAppliedNotice] = useState<string | null>(null);
   const contactSectionRef = useRef<HTMLDivElement>(null);
+
+  const filteredStartTimes = useMemo(() => {
+    return START_TIMES.filter((t) => {
+      const h = parseInt(t.split(":")[0]);
+      if (timeFilter === "morning") return h >= 6 && h < 12;
+      if (timeFilter === "afternoon") return h >= 12 && h < 17;
+      if (timeFilter === "evening") return h >= 17 && h <= 23;
+      return true;
+    });
+  }, [timeFilter]);
   
   const dateStr = useMemo(() => {
     const y = selectedDate.getFullYear();
@@ -404,26 +407,29 @@ function BookingContent() {
               )}
             </AnimatePresence>
 
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} key={activeField.id} className="relative aspect-[16/9] rounded-3xl overflow-hidden border border-border shadow-lg">
-              <img src={`/fields/img-${(fields.findIndex((f) => f.id === activeField.id) % 6) + 1}.jpg`} alt={activeField.ten_san} className="absolute inset-0 w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} key={activeField.id} className="relative aspect-[16/9] rounded-3xl overflow-hidden border border-border shadow-lg group">
+              <img src={`/fields/img-${(fields.findIndex((f) => f.id === activeField.id) % 6) + 1}.jpg`} alt={activeField.ten_san} className="ken-burns absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+              
+              <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md rounded-xl px-3 py-1.5 text-xs font-semibold text-white flex items-center gap-1.5 border border-white/10 shadow-lg">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-400 animate-spin-slow" />
+                <span>Toàn cảnh sân 360°</span>
+              </div>
+
               <div className="absolute bottom-0 left-0 right-0 p-5 text-white">
                 <div className="font-display font-bold text-2xl mb-1 drop-shadow-lg">{activeField.ten_san}</div>
                 <div className="text-sm opacity-90 drop-shadow">{activeField.loai_san === "SAN_5" ? "Sân 5 người" : "Sân 7 người"} · Sức chứa {activeField.suc_chua} người</div>
               </div>
-              <div className="absolute top-3 right-3 bg-white/95 rounded-xl px-3 py-1.5 text-sm font-bold text-primary shadow-lg">{formatVND(activeField.gia_tieu_chuan)}/h</div>
+              <div className="absolute top-3 right-3 bg-white/95 rounded-xl px-3.5 py-1.5 text-sm font-bold text-primary shadow-lg">{formatVND(activeField.gia_tieu_chuan)}/h</div>
             </motion.div>
 
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-card rounded-3xl border border-border p-6">
-              <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">1</span>Chọn sân</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {fields.map((f, idx) => (
-                  <button key={f.id} onClick={() => setActiveField(f)} className={`rounded-2xl border-2 text-left overflow-hidden transition-all duration-200 ${activeField.id === f.id ? "border-primary shadow-lg scale-[1.02]" : "border-border hover:border-primary/30"}`}>
-                    <div className="relative aspect-[4/3]"><img src={`/fields/img-${(idx % 6) + 1}.jpg`} alt={f.ten_san} className="absolute inset-0 w-full h-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" /><div className="absolute bottom-2 left-2 right-2 text-white"><div className="font-bold text-sm drop-shadow">{f.ten_san.split(" - ")[0]}</div></div></div>
-                    <div className="p-3 bg-card"><div className="text-xs text-muted-foreground mb-0.5">{f.loai_san === "SAN_5" ? "5 vs 5" : "7 vs 7"}</div><div className="text-sm font-semibold text-primary">{formatVND(f.gia_tieu_chuan)}/h</div></div>
-                  </button>
-                ))}
-              </div>
+            {/* Bước 1: Bộ chọn sân 3D xoay vòng Orbit & Grid */}
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-card rounded-3xl border border-border p-5 sm:p-6 shadow-sm">
+              <Field3DShowcase
+                fields={fields}
+                activeField={activeField}
+                onSelectField={(f) => setActiveField(f)}
+              />
             </motion.div>
 
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-card rounded-3xl border border-border p-6">
@@ -454,23 +460,70 @@ function BookingContent() {
               </div>
             </motion.div>
 
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-card rounded-3xl border border-border p-6">
-              <h2 className="text-xl font-display font-bold text-foreground mb-4 flex items-center gap-2">
-                <span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">3</span>
-                Chọn giờ bắt đầu
-              </h2>
-              <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-2">
-                {START_TIMES.map((t) => {
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-card rounded-3xl border border-border p-6 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <h2 className="text-xl font-display font-bold text-foreground flex items-center gap-2">
+                  <span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">3</span>
+                  Chọn giờ bắt đầu
+                </h2>
+
+                {/* Filter tabs by Shift/Session for mobile & desktop */}
+                <div className="flex items-center gap-1 p-1 bg-secondary rounded-xl text-xs font-semibold">
+                  <button
+                    onClick={() => setTimeFilter("all")}
+                    className={`px-2.5 py-1 rounded-lg transition-all ${timeFilter === "all" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    Tất cả
+                  </button>
+                  <button
+                    onClick={() => setTimeFilter("morning")}
+                    className={`px-2 py-1 rounded-lg flex items-center gap-1 transition-all ${timeFilter === "morning" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    <Sun className="w-3 h-3" />
+                    <span>Sáng</span>
+                  </button>
+                  <button
+                    onClick={() => setTimeFilter("afternoon")}
+                    className={`px-2 py-1 rounded-lg flex items-center gap-1 transition-all ${timeFilter === "afternoon" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    <Sunset className="w-3 h-3" />
+                    <span>Chiều</span>
+                  </button>
+                  <button
+                    onClick={() => setTimeFilter("evening")}
+                    className={`px-2 py-1 rounded-lg flex items-center gap-1 transition-all ${timeFilter === "evening" ? "bg-card text-amber-600 dark:text-amber-400 shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    <Moon className="w-3 h-3" />
+                    <span>Cao điểm</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
+                {filteredStartTimes.map((t) => {
                   const available = isStartAvailable(t, duration);
                   const isSelected = startTime === t;
                   
-                  // LOGIC TÔ VÀNG GIỜ CAO ĐIỂM TỪ 17:00 ĐẾN 23:00
                   const hour = parseInt(t.split(":")[0]);
                   const isPeak = hour >= 17 && hour <= 23;
 
                   return (
-                    <button key={t} disabled={!available} onClick={() => setStartTime(t)} className={`p-3 rounded-xl text-center border-2 transition-all ${isSelected ? "bg-primary text-primary-foreground border-primary shadow-lg" : !available ? "bg-destructive/5 text-destructive/30 border-destructive/10 cursor-not-allowed" : isPeak ? "bg-amber-100 border-amber-400 text-amber-900 hover:bg-amber-200" : "bg-card border-border text-foreground hover:border-primary/30"}`}>
-                      <div className="font-bold text-sm">{t}</div><div className="text-[10px] opacity-70">→ {addDuration(t, duration)}</div>
+                    <button 
+                      key={t} 
+                      disabled={!available} 
+                      onClick={() => setStartTime(t)} 
+                      className={`p-2.5 sm:p-3 rounded-xl text-center border-2 transition-all active:scale-95 ${
+                        isSelected 
+                          ? "bg-primary text-primary-foreground border-primary shadow-md font-bold" 
+                          : !available 
+                            ? "bg-destructive/5 text-destructive/30 border-destructive/10 cursor-not-allowed" 
+                            : isPeak 
+                              ? "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400 hover:border-amber-500 hover:bg-amber-500/20" 
+                              : "bg-card border-border text-foreground hover:border-primary/40 hover:bg-secondary/40"
+                      }`}
+                    >
+                      <div className="font-bold text-sm leading-tight">{t}</div>
+                      <div className="text-[10px] opacity-75 mt-0.5">→ {addDuration(t, duration)}</div>
                     </button>
                   );
                 })}
@@ -487,13 +540,24 @@ function BookingContent() {
                       <label key={svc.id} className={`flex items-center gap-4 p-4 rounded-2xl border-2 cursor-pointer transition-all ${qty > 0 ? "border-primary bg-primary/5" : "border-border hover:border-primary/30"}`}>
                         <input type="checkbox" checked={qty > 0} onChange={(e) => setQty(svc.id, e.target.checked ? 1 : 0)} className="w-5 h-5 rounded-lg accent-primary" />
                         <div className="flex-1"><div className="font-medium text-foreground">{svc.ten_dich_vu}</div><div className="text-sm text-muted-foreground">{formatVND(svc.don_gia)}/{svc.don_vi_tinh}</div></div>
-                        {qty > 0 && <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}><button 
-  onClick={() => setQty(svc.id, qty + 1)} 
-  disabled={qty >= svc.ton_kho} 
-  className="w-8 h-8 rounded-lg bg-secondary font-bold disabled:opacity-30 disabled:cursor-not-allowed"
->
-  +
-</button></div>}
+                        {qty > 0 && (
+                          <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}>
+                            <button
+                              onClick={() => setQty(svc.id, qty - 1)}
+                              className="w-8 h-8 rounded-lg bg-secondary font-bold hover:bg-secondary/70 transition-colors"
+                            >
+                              −
+                            </button>
+                            <span className="w-5 text-center font-semibold text-sm">{qty}</span>
+                            <button
+                              onClick={() => setQty(svc.id, qty + 1)}
+                              disabled={qty >= svc.ton_kho}
+                              className="w-8 h-8 rounded-lg bg-secondary font-bold disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                              +
+                            </button>
+                          </div>
+                        )}
                       </label>
                     );
                   })}
@@ -629,6 +693,36 @@ function BookingContent() {
             </motion.div>
           </div>
         </div>
+      </div>
+
+      {/* Mobile Sticky Booking Bar */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 px-4 py-3 bg-card/95 backdrop-blur-xl border-t border-border shadow-2xl flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] text-muted-foreground font-medium truncate">
+            {activeField?.ten_san} {startTime ? `• ${startTime}` : "• Chưa chọn giờ"}
+          </div>
+          <div className="text-lg font-display font-bold text-primary leading-tight">
+            {formatVND(tongCong)}
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            if (!startTime) {
+              alert("Vui lòng chọn giờ bắt đầu trước khi đặt!");
+              return;
+            }
+            if (!tenKhach.trim() || !sdtKhach.trim()) {
+              contactSectionRef.current?.scrollIntoView({ behavior: "smooth" });
+              return;
+            }
+            submit();
+          }}
+          disabled={submitting}
+          className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl font-bold text-sm shadow-md shadow-primary/30 flex items-center gap-1.5 active:scale-95 disabled:opacity-50 transition-all shrink-0"
+        >
+          {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+          <span>{startTime && tenKhach && sdtKhach ? "Đặt sân ngay" : "Tiếp tục"}</span>
+        </button>
       </div>
     </>
   );

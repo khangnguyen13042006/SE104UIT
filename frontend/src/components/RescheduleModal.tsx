@@ -7,8 +7,8 @@ import { X, Calendar, Clock, Loader2, AlertCircle } from "lucide-react";
 
 const START_TIMES: string[] = [];
 for (let h = 6; h <= 22; h++) {
-  for (const m of [0, 30]) {
-    if (h === 22 && m === 30) continue;
+  for (const m of [0, 15, 30, 45]) {
+    if (h === 22 && m > 0) continue;
     START_TIMES.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
   }
 }

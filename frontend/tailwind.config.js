@@ -20,9 +20,8 @@ module.exports = {
         },
       },
       fontFamily: {
-        display: ['"Times New Roman"', "Times", "serif"],
-        sans: ['"Times New Roman"', "Times", "serif"],
-        serif: ['"Times New Roman"', "Times", "serif"],
+        display: ['"Space Grotesk"', "Inter", "sans-serif"],
+        sans: ['"Inter"', "system-ui", "sans-serif"],
       },
     },
   },

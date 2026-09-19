@@ -60,7 +60,7 @@ export default function FieldsAdmin() {
             <div key={f.id} className="bg-card rounded-3xl border border-border overflow-hidden card-hover">
               <div className="relative aspect-[16/10]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={`/fields/img-${(idx % 6) + 1}.jpg`} alt={f.ten_san} className="absolute inset-0 w-full h-full object-cover" />
+                <img src={`/fields/img-${(idx % 6) + 1}.jpg`} alt={f.ten_san} className="ken-burns absolute inset-0 w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
                 <div className="absolute top-3 right-3">
                   <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${

@@ -66,22 +66,22 @@ export default function Navbar() {
       <AnimatePresence>
         {menuOpen && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
-            className="md:hidden border-t border-border bg-background p-3 space-y-1 overflow-hidden">
-            <Link href="/" className="block px-4 py-3 rounded-2xl hover:bg-secondary text-foreground">Trang chủ</Link>
-            <Link href="/booking" className="block px-4 py-3 rounded-2xl hover:bg-secondary text-foreground">Đặt sân</Link>
-            <Link href="/feedback" className="block px-4 py-3 rounded-2xl hover:bg-secondary text-foreground">Đánh giá</Link>
-            {user && <Link href="/my-bookings" className="block px-4 py-3 rounded-2xl hover:bg-secondary text-foreground">Lịch của tôi</Link>}
-            {user && <Link href="/membership" className="block px-4 py-3 rounded-2xl hover:bg-secondary text-foreground">Thẻ thành viên</Link>}
-            {isAdmin && <Link href="/admin" className="block px-4 py-3 rounded-2xl hover:bg-secondary text-foreground">Quản trị</Link>}
+            className="md:hidden border-t border-border bg-background/95 backdrop-blur-2xl p-4 space-y-1.5 overflow-hidden shadow-2xl">
+            <Link onClick={() => setMenuOpen(false)} href="/" className={`block px-4 py-3 rounded-2xl font-semibold transition-colors ${pathname === "/" ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-secondary"}`}>Trang chủ</Link>
+            <Link onClick={() => setMenuOpen(false)} href="/booking" className={`block px-4 py-3 rounded-2xl font-semibold transition-colors ${pathname.startsWith("/booking") ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-secondary"}`}>Đặt sân</Link>
+            <Link onClick={() => setMenuOpen(false)} href="/feedback" className={`block px-4 py-3 rounded-2xl font-semibold transition-colors ${pathname.startsWith("/feedback") ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-secondary"}`}>Đánh giá</Link>
+            {user && <Link onClick={() => setMenuOpen(false)} href="/my-bookings" className={`block px-4 py-3 rounded-2xl font-semibold transition-colors ${pathname.startsWith("/my-bookings") ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-secondary"}`}>Lịch của tôi</Link>}
+            {user && <Link onClick={() => setMenuOpen(false)} href="/membership" className={`block px-4 py-3 rounded-2xl font-semibold transition-colors ${pathname.startsWith("/membership") ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-secondary"}`}>Thẻ thành viên</Link>}
+            {isAdmin && <Link onClick={() => setMenuOpen(false)} href="/admin" className={`block px-4 py-3 rounded-2xl font-semibold transition-colors ${pathname.startsWith("/admin") ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-secondary"}`}>Quản trị</Link>}
             {user ? (
-              <button onClick={logout} className="w-full text-left px-4 py-3 rounded-2xl hover:bg-destructive/10 text-destructive">
+              <button onClick={() => { setMenuOpen(false); logout(); }} className="w-full text-left px-4 py-3 rounded-2xl hover:bg-destructive/10 text-destructive font-semibold">
                 Đăng xuất ({user.ho_ten})
               </button>
             ) : (
-              <>
-                <Link href="/login" className="block px-4 py-3 rounded-2xl hover:bg-secondary text-foreground">Đăng nhập</Link>
-                <Link href="/register" className="block px-4 py-3 rounded-2xl bg-primary text-primary-foreground font-semibold">Đăng ký</Link>
-              </>
+              <div className="pt-2 flex flex-col gap-2 border-t border-border/80">
+                <Link onClick={() => setMenuOpen(false)} href="/login" className="block text-center px-4 py-3 rounded-2xl hover:bg-secondary text-foreground font-semibold border border-border">Đăng nhập</Link>
+                <Link onClick={() => setMenuOpen(false)} href="/register" className="block text-center px-4 py-3 rounded-2xl bg-primary text-primary-foreground font-bold shadow-md shadow-primary/25">Đăng ký</Link>
+              </div>
             )}
           </motion.div>
         )}

@@ -58,7 +58,7 @@ def validate_and_sanitize_booking_action(
     except Exception:
         return None
 
-    # 2. Kiểm tra giờ và làm tròn theo bước 30 phút
+    # 2. Kiểm tra giờ và làm tròn theo bước 15 phút
     try:
         if not time_str or not isinstance(time_str, str):
             return None
@@ -66,11 +66,8 @@ def validate_and_sanitize_booking_action(
         th = int(parts[0])
         tm = int(parts[1]) if len(parts) > 1 else 0
 
-        if tm < 15:
-            tm = 0
-        elif tm < 45:
-            tm = 30
-        else:
+        tm = round(tm / 15.0) * 15
+        if tm == 60:
             th += 1
             tm = 0
 
@@ -506,7 +503,7 @@ Thời gian thực tế hiện tại: {today.strftime('%Y-%m-%d')}, lúc {now_vn
 
 GIỜ HOẠT ĐỘNG & QUY ĐỊNH:
 - Giờ mở cửa: 06:00 - 23:00 mỗi ngày.
-- Giờ bắt đầu các ca đặt phải là mốc tròn :00 hoặc :30 (ví dụ 17:00, 17:30, 18:00...).
+- Giờ bắt đầu các ca đặt theo bước 15 phút (ví dụ 17:00, 17:15, 17:30, 17:45, 18:00...).
 - Thời lượng đặt: 0.5h, 1h, 1.5h, 2h, 2.5h, 3h (mặc định khuyến nghị 1.5h).
 - Giờ cao điểm: 17:00 - 22:00.
 - Giảm giá thành viên: Bạc 5%, Vàng 10%, Kim Cương 15% tiền sân.
@@ -543,7 +540,7 @@ Luôn trả về đúng 1 JSON object gồm 2 khóa:
        "field_id": (int) ID sân còn trống,
        "field_name": (str) tên sân,
        "date": (str) định dạng YYYY-MM-DD (quy đổi chuẩn từ "hôm nay", "ngày mai", v.v. dựa trên mốc {today.strftime('%Y-%m-%d')}),
-       "time": (str) định dạng HH:MM (kết thúc bằng :00 hoặc :30, nằm trong dải 06:00 đến 22:00),
+       "time": (str) định dạng HH:MM (phút là 00/15/30/45, nằm trong dải 06:00 đến 22:00),
        "duration": (float) số giờ đặt (mặc định 1.5).
    - Nếu khách chỉ định loại sân (ví dụ "sân 7" hoặc "sân 5"), HÃY TỰ ĐỘNG CHỌN SÂN ĐẦU TIÊN CÙNG LOẠI CÒN TRỐNG để gán vào booking_action.
    - Nếu khách tra cứu lịch cá nhân, hỏi STK thanh toán, hỏi chính sách hủy hoặc giờ đó đã kín lịch: gán "booking_action": null.

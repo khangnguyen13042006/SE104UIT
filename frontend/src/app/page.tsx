@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation"; // Thêm hook chuyển trang
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
-import { getUser } from "@/lib/api"; // Thêm hàm lấy user
+import HeroPitch3D from "@/components/HeroPitch3D";
+import { getUser } from "@/lib/api";
 import { 
   ArrowRight, Calendar, Clock, Shield, Star, 
   Zap, Users, MapPin, Sparkles, ChevronRight
@@ -43,76 +44,56 @@ export default function HomePage() {
     <>
       <Navbar />
       <section className="relative overflow-hidden">
-        <div className="absolute inset-0 -z-10">
-          <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-gradient-to-bl from-primary/20 to-transparent rounded-full blur-3xl" />
-          <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-accent/20 to-transparent rounded-full blur-3xl" />
+        <div className="absolute inset-0 -z-10 pointer-events-none">
+          <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-gradient-to-bl from-primary/20 to-transparent rounded-full blur-3xl opacity-60" />
+          <div className="absolute bottom-0 left-0 w-[450px] h-[450px] bg-gradient-to-tr from-accent/20 to-transparent rounded-full blur-3xl opacity-60" />
         </div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24 lg:py-32">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20 lg:py-24">
+          <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-center">
             <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.6 }}>
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6">
-                <Sparkles className="w-4 h-4" /><span>Ứng dụng đặt sân #1 Việt Nam</span>
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm font-semibold mb-6 shadow-sm">
+                <Sparkles className="w-4 h-4 animate-spin-slow" /><span>Ứng dụng đặt sân bóng hiện đại #1</span>
               </div>
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-display font-bold text-foreground leading-[1.1] mb-6 text-balance">
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-display font-bold text-foreground leading-[1.1] mb-6 tracking-tight">
                 Đặt sân bóng<br />
                 <span className="gradient-text">nhanh & tiện lợi</span>
               </h1>
-              <p className="text-lg text-muted-foreground mb-8 leading-relaxed max-w-lg">
-                Xem lịch trống real-time, chọn khung giờ, thanh toán QR — chỉ trong 3 bước. Không gọi điện, không chờ xác nhận.
+              <p className="text-base sm:text-lg text-muted-foreground mb-8 leading-relaxed max-w-lg">
+                Xem lịch trống real-time, chọn sân trực quan 3D, thanh toán QR siêu tốc — chỉ trong 3 bước. Không gọi điện, không chờ xác nhận.
               </p>
               <div className="flex flex-wrap gap-4">
-                {/* Đã thay đổi thẻ Link thành Button gọi hàm kiểm tra */}
                 <button 
                   onClick={handleBookingClick} 
-                  className="group inline-flex items-center gap-2 px-6 py-4 bg-primary text-primary-foreground rounded-2xl font-semibold shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:scale-105 transition-all duration-300"
+                  className="group inline-flex items-center gap-2.5 px-7 py-4 bg-primary text-primary-foreground rounded-2xl font-bold shadow-xl shadow-primary/30 hover:shadow-primary/50 hover:scale-105 active:scale-95 transition-all duration-300"
                 >
                   <span>Đặt sân ngay</span>
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </button>
                 
-                <Link href="/register" className="inline-flex items-center gap-2 px-6 py-4 border-2 border-border text-foreground rounded-2xl font-semibold hover:bg-secondary hover:border-primary/20 transition-all duration-300">
+                <Link href="/register" className="inline-flex items-center gap-2 px-6 py-4 border-2 border-border/80 bg-card/50 backdrop-blur-sm text-foreground rounded-2xl font-semibold hover:bg-secondary hover:border-primary/40 transition-all duration-300">
                   Đăng ký thành viên
                 </Link>
               </div>
-              <div className="grid grid-cols-4 gap-4 mt-12 pt-8 border-t border-border">
+              <div className="grid grid-cols-4 gap-4 mt-10 pt-8 border-t border-border/80">
                 {STATS.map((stat, i) => (
                   <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 + i * 0.1 }}>
-                    <div className="font-display text-2xl sm:text-3xl font-bold text-foreground">{stat.value}</div>
-                    <div className="text-xs sm:text-sm text-muted-foreground">{stat.label}</div>
+                    <div className="font-display text-2xl sm:text-3xl font-bold text-foreground tracking-tight">{stat.value}</div>
+                    <div className="text-xs sm:text-sm text-muted-foreground mt-0.5">{stat.label}</div>
                   </motion.div>
                 ))}
               </div>
             </motion.div>
-            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.6, delay: 0.2 }} className="relative">
-              <div className="relative aspect-square lg:aspect-[4/3] rounded-3xl overflow-hidden shadow-2xl shadow-primary/20">
-                <div className="absolute inset-0 bg-gradient-to-br from-primary to-primary/80">
-                  <div className="absolute inset-4 border-2 border-white/30 rounded-xl" />
-                  <div className="absolute inset-y-4 left-1/2 w-px bg-white/30" />
-                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 border-2 border-white/30 rounded-full" />
-                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-white/50 rounded-full" />
-                  <div className="absolute top-4 left-1/2 -translate-x-1/2 w-32 h-12 border-2 border-white/30 border-t-0 rounded-b-xl" />
-                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-32 h-12 border-2 border-white/30 border-b-0 rounded-t-xl" />
-                </div>
-                <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }} className="absolute top-8 right-8 text-6xl">⚽</motion.div>
-                <div className="absolute bottom-4 left-4 right-4 p-4 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-primary rounded-full pulse-dot" />
-                      <span className="text-sm font-medium text-primary">Đang có sẵn</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-accent">
-                      <Star className="w-4 h-4 fill-accent" /><span className="text-sm font-semibold">4.8</span>
-                    </div>
-                  </div>
-                  <div className="font-display font-bold text-lg text-foreground mb-1">Sân Bóng Đá Premium</div>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span className="flex items-center gap-1"><MapPin className="w-4 h-4" />TP.HCM</span>
-                    <span className="flex items-center gap-1"><Users className="w-4 h-4" />5v5, 7v7</span>
-                  </div>
-                </div>
-              </div>
-              <div className="absolute -top-4 -right-4 w-24 h-24 bg-accent/20 rounded-full blur-2xl" />
-              <div className="absolute -bottom-4 -left-4 w-32 h-32 bg-primary/20 rounded-full blur-2xl" />
+            
+            {/* 3D Interactive Stadium on Homepage */}
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }} 
+              animate={{ opacity: 1, scale: 1 }} 
+              transition={{ duration: 0.7, delay: 0.15 }} 
+              className="relative w-full"
+            >
+              <HeroPitch3D />
+              <div className="absolute -top-6 -right-6 w-32 h-32 bg-primary/20 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -bottom-6 -left-6 w-36 h-36 bg-accent/20 rounded-full blur-3xl pointer-events-none" />
             </motion.div>
           </div>
         </div>

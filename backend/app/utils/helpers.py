@@ -134,8 +134,8 @@ def get_feedback_snapshot(db: Session, san_id: Optional[int] = None) -> dict:
 
 
 def is_valid_booking_time(start: time, end: time) -> tuple[bool, str]:
-    if start.minute not in (0, 30) or end.minute not in (0, 30):
-        return False, "Giờ đặt phải theo bước 30 phút"
+    if start.minute not in (0, 15, 30, 45) or end.minute not in (0, 15, 30, 45):
+        return False, "Giờ đặt phải theo bước 15 phút"
     hours = calculate_hours(start, end)
     if hours <= 0:
         return False, "Giờ kết thúc phải sau giờ bắt đầu"
