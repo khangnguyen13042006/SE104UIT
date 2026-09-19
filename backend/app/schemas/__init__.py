@@ -195,6 +195,7 @@ class BookingOut(BaseModel):
     ly_do_huy: Optional[str]
     hoan_tien: bool = False
     ty_le_hoan_tien: Optional[float] = None
+    so_tien_hoan: Optional[Decimal] = None  # số tiền phải hoàn (chỉ có khi đơn đã hủy)
     ngay_huy: Optional[datetime] = None
     stk_hoan_tien: Optional[str] = None
     ten_tk_hoan_tien: Optional[str] = None

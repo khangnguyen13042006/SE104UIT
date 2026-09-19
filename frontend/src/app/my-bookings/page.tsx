@@ -282,7 +282,7 @@ function RefundStatusBox({ booking, onUpdated }: { booking: any; onUpdated: () =
           <div className="text-xs leading-relaxed opacity-90">{detail}</div>
           {(state === "refunded" || state === "pending") && booking.invoice && (
             <div className="text-xs mt-2 font-semibold">
-              {state === "refunded" ? "Số tiền hoàn" : "Dự kiến hoàn"}: {formatVND(parseFloat(booking.invoice.tong_cong) * rate)} ({Math.round(rate * 100)}%)
+              {state === "refunded" ? "Số tiền hoàn" : "Dự kiến hoàn"}: {formatVND(booking.so_tien_hoan ?? parseFloat(booking.invoice.tong_cong) * rate)} ({Math.round(rate * 100)}%)
             </div>
           )}
 

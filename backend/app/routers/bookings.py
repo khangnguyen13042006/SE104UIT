@@ -24,13 +24,26 @@ from app.utils.helpers import (
     has_booking_conflict, get_active_membership, get_discount_rate,
     is_valid_booking_time, calculate_lifetime_spend, calculate_tier_from_spend,
 )
-from app.utils.mailer import send_booking_success_email, send_booking_cancelled_email, send_booking_rescheduled_email
+from app.utils.mailer import send_booking_success_email, send_booking_cancelled_email, send_booking_rescheduled_email, send_refund_completed_email
 
 router = APIRouter(prefix="/api/bookings", tags=["Bookings"])
 
 gemini_client = genai.Client(
     api_key=os.environ.get("GEMINI_API_KEY"),
 )
+
+
+def _refund_rate(b: Booking) -> float:
+    """Tỷ lệ hoàn tiền hiệu lực — nguồn duy nhất cho mọi màn hình/email.
+    Đơn hủy cũ (trước khi có cột ty_le_hoan_tien) có hoan_tien=True nhưng ty_le NULL → coi là 50% theo policy."""
+    if not b.hoan_tien:
+        return 0.0
+    return b.ty_le_hoan_tien if b.ty_le_hoan_tien is not None else 0.5
+
+
+def _refund_amount(b: Booking) -> Decimal:
+    base = b.invoice.tong_cong if b.invoice else b.tien_san
+    return (Decimal(str(base)) * Decimal(str(_refund_rate(b)))).quantize(Decimal("1"))
 
 
 def _booking_to_out(b: Booking) -> dict:
@@ -80,7 +93,8 @@ def _booking_to_out(b: Booking) -> dict:
         "trang_thai": b.trang_thai,
         "ly_do_huy": b.ly_do_huy,
         "hoan_tien": b.hoan_tien,
-        "ty_le_hoan_tien": b.ty_le_hoan_tien,
+        "ty_le_hoan_tien": _refund_rate(b) if b.trang_thai == BookingStatus.HUY else b.ty_le_hoan_tien,
+        "so_tien_hoan": _refund_amount(b) if b.trang_thai == BookingStatus.HUY else None,
         "ngay_huy": b.ngay_huy,
         "stk_hoan_tien": b.stk_hoan_tien,
         "ten_tk_hoan_tien": b.ten_tk_hoan_tien,
@@ -433,7 +447,8 @@ def cancel_booking(
         gio_bat_dau=b.gio_bat_dau,
         gio_ket_thuc=b.gio_ket_thuc,
         ly_do_huy=b.ly_do_huy,
-        refund_rate=b.ty_le_hoan_tien or 0.0,
+        refund_rate=_refund_rate(b),
+        refund_amount=_refund_amount(b),
     )
     return _booking_to_out(b)
 
@@ -597,14 +612,26 @@ def confirm_refund(
         raise HTTPException(400, "Chỉ booking đã hủy mới có thể xác nhận hoàn tiền")
     if not b.invoice:
         raise HTTPException(400, "Booking không có hóa đơn")
-    #if b.invoice.trang_thai != PaymentStatus.CHO_HOAN_TIEN:
-        #raise HTTPException(400, f"Hóa đơn không ở trạng thái chờ hoàn tiền (hiện: {b.invoice.trang_thai})")
+    if _refund_rate(b) <= 0:
+        raise HTTPException(400, "Đơn này không thuộc diện hoàn tiền")
+    if b.invoice.trang_thai == PaymentStatus.HOAN_TIEN:
+        return _booking_to_out(b)  # đã xác nhận trước đó — không gửi lại email
 
     b.invoice.trang_thai = PaymentStatus.HOAN_TIEN
     note = f"[XÁC NHẬN HOÀN TIỀN {datetime.now().strftime('%H:%M %d/%m/%Y')} bởi {user.ho_ten}]"
     b.ghi_chu = (b.ghi_chu + "\n" + note) if b.ghi_chu else note
     db.commit()
     db.refresh(b)
+    send_refund_completed_email(
+        to_email=b.khach_hang.email if b.khach_hang else b.email_khach_vang_lai,
+        ma_dat_san=b.ma_dat_san,
+        ten_san=b.san.ten_san if b.san else "",
+        refund_rate=_refund_rate(b),
+        refund_amount=_refund_amount(b),
+        stk=b.stk_hoan_tien,
+        ten_tk=b.ten_tk_hoan_tien,
+        ngan_hang=b.ngan_hang_hoan_tien,
+    )
     return _booking_to_out(b)
 
 

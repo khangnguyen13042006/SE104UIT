@@ -89,10 +89,12 @@ def send_booking_cancelled_email(
     gio_ket_thuc: time,
     ly_do_huy: Optional[str],
     refund_rate: float,
+    refund_amount: Optional[Union[Decimal, float, int]] = None,
 ) -> None:
     if refund_rate > 0:
+        amount_text = f" (<strong>{int(refund_amount):,}đ</strong>)" if refund_amount is not None else ""
         refund_text = (
-            f"Bạn sẽ được hoàn <strong>{int(refund_rate * 100)}%</strong> tiền sân. "
+            f"Bạn sẽ được hoàn <strong>{int(refund_rate * 100)}%</strong> tiền{amount_text}. "
             f'Vui lòng đăng nhập và vào mục "Lịch đặt của tôi" trên website, bấm nút '
             f'"Thông tin hoàn tiền" ở đơn này để cung cấp Số tài khoản, Tên chủ tài khoản và Ngân hàng nhận tiền.'
         )
@@ -114,6 +116,34 @@ def send_booking_cancelled_email(
     </div>
     """
     _send(to_email, f"Đơn đặt sân {ma_dat_san} đã bị hủy", html)
+
+
+def send_refund_completed_email(
+    to_email: Optional[str],
+    ma_dat_san: str,
+    ten_san: str,
+    refund_rate: float,
+    refund_amount: Union[Decimal, float, int],
+    stk: Optional[str],
+    ten_tk: Optional[str],
+    ngan_hang: Optional[str],
+) -> None:
+    dest = " - ".join(x for x in (ngan_hang, stk, ten_tk) if x) or "tài khoản bạn đã cung cấp"
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color:#1a1a1a;">
+      <h2 style="color:#10b981;">Đã hoàn tiền đơn đặt sân</h2>
+      <p>Sân Bóng UIT đã chuyển khoản hoàn tiền cho đơn đặt sân bị hủy của bạn:</p>
+      <table style="width:100%; border-collapse: collapse; margin: 16px 0;">
+        <tr><td style="padding:6px 0; color:#888;">Mã đặt sân</td><td style="padding:6px 0; text-align:right; font-weight:bold;">{ma_dat_san}</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Sân</td><td style="padding:6px 0; text-align:right;">{ten_san}</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Mức hoàn</td><td style="padding:6px 0; text-align:right;">{int(refund_rate * 100)}%</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Số tiền đã hoàn</td><td style="padding:6px 0; text-align:right; font-weight:bold;">{int(refund_amount):,}đ</td></tr>
+        <tr><td style="padding:6px 0; color:#888;">Chuyển tới</td><td style="padding:6px 0; text-align:right;">{dest}</td></tr>
+      </table>
+      <p style="color:#888; font-size: 12px;">Vui lòng kiểm tra tài khoản ngân hàng/ví của bạn. Nếu chưa nhận được tiền, hãy liên hệ Sân Bóng UIT.</p>
+    </div>
+    """
+    _send(to_email, f"Đã hoàn tiền đơn {ma_dat_san}", html)
 
 
 def send_booking_rescheduled_email(

@@ -32,6 +32,13 @@ def _get_staff(db: Session, staff_id: int) -> User:
     return nv
 
 
+def _is_paid(pay: Optional[SalaryPayment], thang: str) -> bool:
+    """Tháng đã qua mặc định coi là đã chuyển lương (dữ liệu quá khứ); trừ khi đã có bản ghi xác nhận tường minh."""
+    if pay is not None:
+        return bool(pay.da_chuyen)
+    return thang < date.today().strftime("%Y-%m")
+
+
 def _month_range(thang: str) -> tuple[date, date]:
     y, m = int(thang[:4]), int(thang[5:7])
     return date(y, m, 1), date(y, m, monthrange(y, m)[1])
@@ -82,7 +89,7 @@ def salary_summary(
             "so_ca_thang": len(worked),
             "so_ca_sap_toi": len(upcoming),
             "tong_luong": sum(rate(s) for s in worked),
-            "da_chuyen": bool(pay and pay.da_chuyen),
+            "da_chuyen": _is_paid(pay, thang),
             "ngay_chuyen": pay.ngay_chuyen if pay and pay.da_chuyen else None,
             "chi_tiet": [
                 {"ngay": s.ngay, "ca_truc": s.ca_truc.value, "luong": rate(s)} for s in worked
@@ -198,7 +205,7 @@ def staff_history(
         m["tong_luong"] += s.luong_ca if s.luong_ca is not None else DEFAULT_LUONG_CA
     for key, m in months.items():
         p = payments.get(key)
-        m["da_chuyen"] = bool(p and p.da_chuyen)
+        m["da_chuyen"] = _is_paid(p, key)
         m["ngay_chuyen"] = p.ngay_chuyen if p and p.da_chuyen else None
 
     changes = (

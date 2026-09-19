@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { apiGet, apiPost, apiPut, apiDelete, getUser, formatVND } from "@/lib/api";
 import {
   Loader2, UserCog, Phone, Mail, Eye, EyeOff, CalendarCheck2,
-  History, X, MapPin, Clock, Wallet, TrendingUp, Pencil, Check, Trash2, BadgeCheck,
+  History, X, MapPin, Clock, Wallet, TrendingUp, ChevronDown, Pencil, Check, Trash2, BadgeCheck,
 } from "lucide-react";
 
 const CA_LABEL: Record<string, string> = {
@@ -33,8 +33,10 @@ export default function StaffAdmin() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [salaryTarget, setSalaryTarget] = useState<any>(null);
   const [salaryHistory, setSalaryHistory] = useState<any>(null);
+  const [historyMode, setHistoryMode] = useState<"salary" | "rate">("salary");
 
-  async function openSalaryHistory(u: any) {
+  async function openSalaryHistory(u: any, mode: "salary" | "rate") {
+    setHistoryMode(mode);
     setSalaryTarget(u);
     setSalaryHistory(null);
     try {
@@ -154,7 +156,8 @@ export default function StaffAdmin() {
               thang={thang}
               canDelete={isAdmin}
               onViewHistory={() => setHistoryTarget(u)}
-              onViewSalary={() => openSalaryHistory(u)}
+              onViewSalary={() => openSalaryHistory(u, "salary")}
+              onViewRate={() => openSalaryHistory(u, "rate")}
               onChangeStatus={(tinh_trang_lam_viec) =>
                 run(() => apiPut(`/api/staff/${u.id}`, { tinh_trang_lam_viec }))
               }
@@ -186,7 +189,7 @@ export default function StaffAdmin() {
             >
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h3 className="text-xl font-display font-bold text-foreground">Lịch sử lương</h3>
+                  <h3 className="text-xl font-display font-bold text-foreground">{historyMode === "salary" ? "Lịch sử lương" : "Lịch sử mức lương"}</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">{salaryTarget.ho_ten}</p>
                 </div>
                 <button onClick={() => setSalaryTarget(null)} className="p-2 hover:bg-secondary rounded-xl transition-colors">
@@ -197,6 +200,7 @@ export default function StaffAdmin() {
                 <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary my-8" />
               ) : (
                 <div className="space-y-5">
+                  {historyMode === "salary" && (
                   <section>
                     <h4 className="text-sm font-semibold text-foreground mb-2">Lương theo tháng</h4>
                     {salaryHistory.thang.length === 0 ? (
@@ -224,9 +228,11 @@ export default function StaffAdmin() {
                       </div>
                     )}
                   </section>
+                  )}
+                  {historyMode === "rate" && (
                   <section>
                     <h4 className="text-sm font-semibold text-foreground mb-2">
-                      Lịch sử mức lương / ca{" "}
+                      Mức lương / ca{" "}
                       <span className="font-normal text-muted-foreground">(hiện tại {formatVND(salaryHistory.luong_hien_tai)})</span>
                     </h4>
                     {salaryHistory.doi_luong.length === 0 ? (
@@ -248,6 +254,7 @@ export default function StaffAdmin() {
                       </div>
                     )}
                   </section>
+                  )}
                 </div>
               )}
             </motion.div>
@@ -316,13 +323,14 @@ function SummaryTile({ label, value, tone }: { label: string; value: string; ton
 }
 
 function StaffCard({
-  user, thang, canDelete, onViewHistory, onViewSalary, onChangeStatus, onChangeRate, onConfirmPaid, onDelete,
+  user, thang, canDelete, onViewHistory, onViewSalary, onViewRate, onChangeStatus, onChangeRate, onConfirmPaid, onDelete,
 }: {
   user: any;
   thang: string;
   canDelete: boolean;
   onViewHistory: () => void;
   onViewSalary: () => void;
+  onViewRate: () => void;
   onChangeStatus: (s: string) => void;
   onChangeRate: (n: number) => void;
   onConfirmPaid: (paid: boolean) => void;
@@ -330,6 +338,7 @@ function StaffCard({
 }) {
   const [showContact, setShowContact] = useState(false);
   const [editingRate, setEditingRate] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
   const [rateInput, setRateInput] = useState(String(user.luong_ca));
   const status = WORK_STATUS[user.tinh_trang_lam_viec] || WORK_STATUS.DANG_LAM;
 
@@ -356,7 +365,37 @@ function StaffCard({
             {showContact ? "Ẩn liên hệ" : "Xem liên hệ"}
           </button>
         </div>
-        <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 ${status.cls}`}>{status.label}</span>
+        <div className="relative shrink-0">
+          <button
+            onClick={() => setStatusOpen((v) => !v)}
+            className={`inline-flex items-center gap-1 text-[10px] font-bold pl-2.5 pr-1.5 py-1 rounded-full ${status.cls}`}
+            title="Đổi tình trạng làm việc"
+          >
+            {status.label} <ChevronDown className="w-3 h-3" />
+          </button>
+          {statusOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setStatusOpen(false)} />
+              <div className="absolute right-0 top-full mt-1 z-20 w-36 rounded-xl border border-border bg-card shadow-xl p-1">
+                {Object.entries(WORK_STATUS).map(([key, v]) => (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      setStatusOpen(false);
+                      if (key !== user.tinh_trang_lam_viec) onChangeStatus(key);
+                    }}
+                    className={`w-full flex items-center justify-between text-left text-xs font-semibold px-2.5 py-2 rounded-lg hover:bg-secondary ${
+                      key === user.tinh_trang_lam_viec ? "text-foreground" : "text-muted-foreground"
+                    }`}
+                  >
+                    {v.label}
+                    {key === user.tinh_trang_lam_viec && <Check className="w-3.5 h-3.5 text-primary" />}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {showContact && (
@@ -369,23 +408,6 @@ function StaffCard({
           </div>
         </div>
       )}
-
-      {/* Tình trạng làm việc */}
-      <div className="mb-4 grid grid-cols-3 gap-1 p-1 rounded-xl bg-secondary/50">
-        {Object.entries(WORK_STATUS).map(([key, v]) => (
-          <button
-            key={key}
-            onClick={() => key !== user.tinh_trang_lam_viec && onChangeStatus(key)}
-            className={`text-[11px] font-semibold py-1.5 rounded-lg transition ${
-              key === user.tinh_trang_lam_viec
-                ? "bg-card shadow text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {v.label}
-          </button>
-        ))}
-      </div>
 
       {/* Lương */}
       <div className="p-3 rounded-2xl border border-border space-y-2">
@@ -423,15 +445,18 @@ function StaffCard({
             </button>
           )}
         </div>
-        <div className="flex items-center justify-between text-sm">
+        <button onClick={onViewRate} className="text-xs font-semibold text-primary hover:underline">
+          Xem lịch sử mức lương
+        </button>
+        <div className="flex items-center justify-between text-sm pt-1">
           <span className="text-muted-foreground">
             Tháng {thang.slice(5)}/{thang.slice(0, 4)}: {user.so_ca_thang} ca đã làm
             {user.so_ca_sap_toi > 0 && ` (+${user.so_ca_sap_toi} sắp tới)`}
           </span>
           <strong className="text-foreground">{formatVND(user.tong_luong)}</strong>
         </div>
-        <button onClick={onViewSalary} className="w-full text-xs font-semibold text-primary hover:underline text-left">
-          Xem lịch sử lương &amp; mức lương
+        <button onClick={onViewSalary} className="text-xs font-semibold text-primary hover:underline">
+          Xem lịch sử lương
         </button>
         {user.da_chuyen ? (
           <button

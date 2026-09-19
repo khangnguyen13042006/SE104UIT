@@ -1,14 +1,47 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { apiGet, apiPost, apiPut, formatVND } from "@/lib/api";
-import { Plus, Edit2, X, Loader2, Recycle, Package } from "lucide-react";
+import { Plus, Edit2, X, Loader2, Recycle, Package, Search } from "lucide-react";
+
+// Bỏ dấu tiếng Việt để tìm kiếm không phân biệt dấu/hoa thường
+const norm = (t: string) =>
+  (t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
 
 export default function ServicesAdmin() {
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any>(null);
   const [creating, setCreating] = useState(false);
+  const [q, setQ] = useState("");
+  const [fLoai, setFLoai] = useState("all");
+  const [fTrangThai, setFTrangThai] = useState("all");
+  const [fTon, setFTon] = useState("all");
+  const [sort, setSort] = useState("name");
+
+  const filtered = useMemo(() => {
+    const kw = norm(q.trim());
+    const out = list.filter((s) => {
+      if (kw && !norm(s.ten_dich_vu).includes(kw)) return false;
+      if (fLoai === "rent" && !s.la_cho_thue) return false;
+      if (fLoai === "consumable" && s.la_cho_thue) return false;
+      if (fTrangThai !== "all" && s.trang_thai !== fTrangThai) return false;
+      if (fTon === "low" && !(s.ton_kho > 0 && s.ton_kho < 5)) return false;
+      if (fTon === "out" && s.ton_kho !== 0) return false;
+      if (fTon === "ok" && s.ton_kho < 5) return false;
+      return true;
+    });
+    const cmp: Record<string, (a: any, b: any) => number> = {
+      name: (a, b) => a.ten_dich_vu.localeCompare(b.ten_dich_vu, "vi"),
+      price_asc: (a, b) => Number(a.don_gia) - Number(b.don_gia),
+      price_desc: (a, b) => Number(b.don_gia) - Number(a.don_gia),
+      stock_asc: (a, b) => a.ton_kho - b.ton_kho,
+      stock_desc: (a, b) => b.ton_kho - a.ton_kho,
+    };
+    return out.sort(cmp[sort]);
+  }, [list, q, fLoai, fTrangThai, fTon, sort]);
+  const hasFilter = q || fLoai !== "all" || fTrangThai !== "all" || fTon !== "all";
+  const selCls = "px-3 py-2.5 rounded-xl border border-border bg-card text-sm text-foreground outline-none focus:border-primary";
 
   async function load() {
     setLoading(true);
@@ -46,6 +79,41 @@ export default function ServicesAdmin() {
           </button>
         </div>
       ) : (
+        <>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm dịch vụ theo tên..."
+              className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-border bg-card text-sm outline-none focus:border-primary" />
+          </div>
+          <select value={fLoai} onChange={(e) => setFLoai(e.target.value)} className={selCls}>
+            <option value="all">Mọi loại</option>
+            <option value="rent">Đồ thuê</option>
+            <option value="consumable">Tiêu hao</option>
+          </select>
+          <select value={fTrangThai} onChange={(e) => setFTrangThai(e.target.value)} className={selCls}>
+            <option value="all">Mọi trạng thái</option>
+            <option value="HOAT_DONG">Hoạt động</option>
+            <option value="NGUNG_KINH_DOANH">Ngừng KD</option>
+          </select>
+          <select value={fTon} onChange={(e) => setFTon(e.target.value)} className={selCls}>
+            <option value="all">Mọi tồn kho</option>
+            <option value="ok">Còn nhiều (≥ 5)</option>
+            <option value="low">Sắp hết (&lt; 5)</option>
+            <option value="out">Hết hàng</option>
+          </select>
+          <select value={sort} onChange={(e) => setSort(e.target.value)} className={selCls}>
+            <option value="name">Sắp xếp: Tên A→Z</option>
+            <option value="price_asc">Giá tăng dần</option>
+            <option value="price_desc">Giá giảm dần</option>
+            <option value="stock_asc">Tồn kho tăng dần</option>
+            <option value="stock_desc">Tồn kho giảm dần</option>
+          </select>
+          {hasFilter && (
+            <button onClick={() => { setQ(""); setFLoai("all"); setFTrangThai("all"); setFTon("all"); }}
+              className="px-3 py-2.5 rounded-xl text-sm font-semibold text-primary hover:bg-primary/10">Xóa lọc</button>
+          )}
+        </div>
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-card rounded-3xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -61,7 +129,10 @@ export default function ServicesAdmin() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {list.map((s) => (
+                {filtered.length === 0 && (
+                  <tr><td colSpan={7} className="p-10 text-center text-muted-foreground">Không có dịch vụ nào khớp bộ lọc</td></tr>
+                )}
+                {filtered.map((s) => (
                   <tr key={s.id} className="hover:bg-secondary/30 transition-colors">
                     <td className="p-4 font-semibold text-foreground">{s.ten_dich_vu}</td>
                     <td className="p-4 text-center">
@@ -92,6 +163,7 @@ export default function ServicesAdmin() {
             </table>
           </div>
         </motion.div>
+        </>
       )}
 
       {(editing || creating) && (

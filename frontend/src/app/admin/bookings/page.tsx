@@ -125,11 +125,12 @@ export default function BookingsAdmin() {
     } catch (e: any) { alert(e.message); }
   }
 
-  async function handleConfirmRefund(id: number, tyLeHoanTien?: number) {
-    const pct = Math.round((tyLeHoanTien || 0.5) * 100);
-    if (!confirm(`Xác nhận bạn đã chuyển khoản hoàn trả ${pct}% tiền cọc cho khách?`)) return;
+  async function handleConfirmRefund(b: any) {
+    const pct = Math.round((b.ty_le_hoan_tien ?? 0) * 100);
+    if (!confirm(`Xác nhận bạn đã chuyển khoản hoàn ${formatVND(b.so_tien_hoan)} (${pct}%) cho khách? Hệ thống sẽ gửi email thông báo đã hoàn tiền.`)) return;
     try {
-      await apiPost(`/api/bookings/${id}/confirm-refund`, {});
+      const updated = await apiPost(`/api/bookings/${b.id}/confirm-refund`, {});
+      setBankInfoTarget(updated);
       load();
     } catch (e: any) { alert(e.message); }
   }
@@ -274,12 +275,12 @@ export default function BookingsAdmin() {
                             )}
                             {b.hoan_tien === true && b.invoice?.trang_thai !== "HOAN_TIEN" && (
                               <span className="text-[9px] font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200 mt-1 whitespace-nowrap">
-                                ⏳ Chưa hoàn tiền ({Math.round((b.ty_le_hoan_tien || 0.5) * 100)}%)
+                                ⏳ Chưa hoàn tiền ({Math.round((b.ty_le_hoan_tien ?? 0) * 100)}%)
                               </span>
                             )}
                             {b.hoan_tien === true && b.invoice?.trang_thai === "HOAN_TIEN" && (
                               <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200 mt-1 whitespace-nowrap">
-                                ✅ Đã hoàn tiền ({Math.round((b.ty_le_hoan_tien || 0.5) * 100)}%)
+                                ✅ Đã hoàn tiền ({Math.round((b.ty_le_hoan_tien ?? 0) * 100)}%)
                               </span>
                             )}
                             {b.ly_do_huy && (
@@ -323,7 +324,7 @@ export default function BookingsAdmin() {
                         
                         {/* CHỈ HIỂN THỊ NÚT NÀY CHO ADMIN/QUẢN LÝ */}
                         {isManager && b.trang_thai === "HUY" && b.hoan_tien === true && b.invoice?.trang_thai !== "HOAN_TIEN" && (
-                          <button onClick={() => handleConfirmRefund(b.id, b.ty_le_hoan_tien)} className="p-2 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-600 hover:text-white transition-all shadow-sm" title="Xác nhận đã hoàn tiền cho khách">
+                          <button onClick={() => setBankInfoTarget(b)} className="p-2 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-600 hover:text-white transition-all shadow-sm" title="Xem STK & xác nhận đã hoàn tiền">
                             <Undo2 size={18}/>
                           </button>
                         )}
@@ -566,7 +567,17 @@ export default function BookingsAdmin() {
                 <button onClick={() => setBankInfoTarget(null)} className="p-1.5 hover:bg-secondary rounded-lg"><X size={18}/></button>
               </div>
               <p className="text-xs text-muted-foreground mb-1">Đơn {bankInfoTarget.ma_dat_san} — {bankInfoTarget.ten_khach || "Khách lẻ"}</p>
-              <p className="text-xs font-bold text-orange-600 mb-4">Mức hoàn: {Math.round((bankInfoTarget.ty_le_hoan_tien || 0) * 100)}%</p>
+              <div className="mb-4 p-3 rounded-2xl bg-orange-50 border border-orange-200 flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] font-bold text-orange-600">Mức hoàn: {Math.round((bankInfoTarget.ty_le_hoan_tien ?? 0) * 100)}%</div>
+                  <div className="text-lg font-black text-orange-700">{formatVND(bankInfoTarget.so_tien_hoan ?? 0)}</div>
+                </div>
+                {bankInfoTarget.invoice?.trang_thai === "HOAN_TIEN" ? (
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-full">✅ Đã hoàn tiền</span>
+                ) : (
+                  <span className="text-[10px] font-bold text-orange-700 bg-orange-100 border border-orange-200 px-2.5 py-1 rounded-full">⏳ Chưa hoàn tiền</span>
+                )}
+              </div>
               {bankInfoTarget.stk_hoan_tien || bankInfoTarget.ten_tk_hoan_tien || bankInfoTarget.ngan_hang_hoan_tien ? (
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between border-b border-border pb-2">
@@ -584,6 +595,14 @@ export default function BookingsAdmin() {
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground italic">Khách chưa cung cấp — hệ thống đã gửi email hướng dẫn khách vào "Lịch đặt của tôi" để nhập thông tin nhận hoàn tiền.</p>
+              )}
+              {isManager && bankInfoTarget.invoice?.trang_thai !== "HOAN_TIEN" && (
+                <button
+                  onClick={() => handleConfirmRefund(bankInfoTarget)}
+                  className="mt-5 w-full py-3 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white text-sm font-bold transition-colors"
+                >
+                  Xác nhận đã hoàn tiền &amp; gửi email cho khách
+                </button>
               )}
             </motion.div>
           </div>
