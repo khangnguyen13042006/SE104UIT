@@ -1,7 +1,8 @@
 from enum import Enum
 
 # JWT
-SECRET_KEY = "san-bong-secret-key-doi-thanh-cua-ban-trong-production"
+import os
+SECRET_KEY = os.getenv("SECRET_KEY", "san-bong-secret-key-doi-thanh-cua-ban-trong-production")  # production: đặt SECRET_KEY trong env
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 day
 

@@ -8,7 +8,7 @@ import { getUser, clearToken } from "@/lib/api";
 import { useApi, prefetch, clearApiCache } from "@/lib/useApi";
 import {
   LayoutDashboard, Calendar, MapPin, Package, Users, ClipboardList,
-  Star, FileBarChart, LogOut, Menu, X, Zap, ChevronRight, Bell,
+  Star, ShieldAlert, FileBarChart, LogOut, Menu, X, Zap, ChevronRight, Bell,
   CheckCircle2, Clock, AlertCircle, UserCog, Check, CheckCheck
 } from "lucide-react";
 
@@ -48,7 +48,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // 1 request duy nhất cho cả 3 nhóm thông báo, tự làm mới mỗi 60s
   const { data: groups, loading: notifLoading } = useApi<any>(user ? "/api/notifications" : null, 60000);
   const allNotifs: any[] = useMemo(
-    () => [...(groups?.dat_san || []), ...(groups?.dich_vu || []), ...(groups?.danh_gia || [])],
+    () => [...(groups?.dat_san || []), ...(groups?.dich_vu || []), ...(groups?.danh_gia || []), ...(groups?.khac || [])],
     [groups]
   );
   const unreadCount = allNotifs.filter((n) => !readIds.has(n.id)).length;
@@ -240,6 +240,7 @@ const GROUPS = [
   { key: "dat_san", label: "Đặt sân", icon: Calendar },
   { key: "dich_vu", label: "Dịch vụ & Ca", icon: Package },
   { key: "danh_gia", label: "Đánh giá", icon: Star },
+  { key: "khac", label: "Khác", icon: ShieldAlert },
 ] as const;
 
 type GroupKey = (typeof GROUPS)[number]["key"];
@@ -281,7 +282,7 @@ function NotifList({ groups, onClose, readIds, onRead, onReadAll, unreadCount, l
         )}
       </div>
 
-      {/* 3 nhóm: Đặt sân • Dịch vụ & Ca trực • Đánh giá thấp */}
+      {/* 4 nhóm: Đặt sân • Dịch vụ & Ca trực • Đánh giá thấp • Khác (vận hành, nhân sự, bảo mật) */}
       <div className="flex gap-1 p-2 bg-secondary/40 border-b border-border">
         {GROUPS.map((g) => {
           const n = unreadOf(g.key);
@@ -311,6 +312,7 @@ function NotifList({ groups, onClose, readIds, onRead, onReadAll, unreadCount, l
             <p className="text-sm text-muted-foreground">
               {tab === "dat_san" ? "Không có đơn nào cần xử lý"
                 : tab === "dich_vu" ? "Dịch vụ và ca trực đều ổn"
+                : tab === "khac" ? "Không có cảnh báo vận hành hay bảo mật"
                 : "Không có đánh giá thấp"}
             </p>
           </div>

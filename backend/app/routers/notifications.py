@@ -1,14 +1,15 @@
-"""Thông báo cho trang quản trị, gom sẵn theo 3 nhóm để chuông chỉ cần gọi 1 request."""
+"""Thông báo cho trang quản trị, gom sẵn theo 4 nhóm (đặt sân • dịch vụ • đánh giá • khác) để chuông chỉ cần gọi 1 request."""
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 from fastapi import APIRouter, Depends
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import require_roles
-from app.core.config import UserRole, BookingStatus, ServiceStatus, PaymentStatus
-from app.models import Booking, Service, Shift, Feedback, User
+from app.core.config import UserRole, BookingStatus, ServiceStatus, PaymentStatus, FieldStatus, UserStatus
+from app.models import Booking, Service, Shift, Feedback, User, Field, SalaryPayment, SecurityEvent, ChatAuditLog
 from app.utils.helpers import payment_due, amount_paid
 
 router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
@@ -177,7 +178,122 @@ def list_notifications(
                 f.ngay_tao, "/admin/feedbacks", True,
             ))
 
-    for group in (dat_san, dich_vu, danh_gia):
+    # ============ 4) KHÁC: vận hành, nhân sự, bảo mật ============
+    khac: list[dict] = []
+    today = now_vn.date()
+    ca_label = {"SANG": "sáng", "CHIEU": "chiều"}
+
+    # Đơn sắp đá trong 60 phút tới (đã xác nhận hoặc còn chờ) — nhắc chuẩn bị sân
+    soon = [
+        b for b in db.query(Booking).filter(
+            Booking.ngay_dat == today,
+            Booking.trang_thai.in_([BookingStatus.CHO_XAC_NHAN, BookingStatus.DA_XAC_NHAN]),
+        ).all()
+        if 0 <= (datetime.combine(b.ngay_dat, b.gio_bat_dau) - now_vn).total_seconds() <= 3600
+    ]
+    for b in soon:
+        cho = b.trang_thai == BookingStatus.CHO_XAC_NHAN
+        khac.append(_item(
+            f"soon-{b.id}-{b.trang_thai.value}", "⏱️", "Sắp đến giờ đá",
+            f"{b.san.ten_san if b.san else ''} • {b.gio_bat_dau.strftime('%H:%M')} • {_ten_khach(b)}"
+            + (" — đơn CHƯA được xác nhận" if cho else ""),
+            now_utc, "/admin/bookings", cho,
+        ))
+
+    # Ca trực của chính người xem (nhân viên): hôm nay / ngày mai
+    if user.vai_tro == UserRole.NHAN_VIEN:
+        mine = db.query(Shift).filter(
+            Shift.nhan_vien_id == user.id, Shift.ngay.in_([today, today + timedelta(days=1)])
+        ).order_by(Shift.ngay).all()
+        for sh in mine:
+            khac.append(_item(
+                f"myshift-{sh.id}", "🗓️", "Ca trực của bạn " + ("hôm nay" if sh.ngay == today else "ngày mai"),
+                f"Ca {ca_label.get(sh.ca_truc.value, sh.ca_truc.value)} ngày {sh.ngay.strftime('%d/%m')}",
+                now_utc, "/admin/shifts", sh.ngay == today,
+            ))
+
+    # Sân đang bảo trì / đóng cửa (mọi nhân sự cần biết để tư vấn khách)
+    for f in db.query(Field).filter(Field.trang_thai != FieldStatus.HOAT_DONG).all():
+        khac.append(_item(
+            f"field-{f.id}-{f.trang_thai.value}", "🛠️", "Sân ngừng hoạt động",
+            f"{f.ten_san} đang ở trạng thái {'bảo trì' if f.trang_thai == FieldStatus.BAO_TRI else 'đóng cửa'}",
+            now_utc, "/admin/fields", False,
+        ))
+
+    if is_manager:
+        # Thiếu một ca (chỉ có sáng hoặc chỉ có chiều) cho ngày mai — sau giờ nhắc phân ca
+        if now_vn.hour >= SHIFT_REMINDER_HOUR:
+            ca_mai = {sh.ca_truc.value for sh in db.query(Shift).filter(Shift.ngay == tomorrow).all()}
+            if ca_mai and len(ca_mai) < 2:
+                thieu = "chiều" if "SANG" in ca_mai else "sáng"
+                khac.append(_item(
+                    f"missing-{tomorrow.isoformat()}-{thieu}", "⚠️", f"Ngày mai thiếu ca {thieu}",
+                    f"Ngày {tomorrow.strftime('%d/%m')} mới có ca {ca_label[next(iter(ca_mai))]}, chưa phân ca {thieu}.",
+                    now_utc, "/admin/shifts", True,
+                ))
+
+        # Ca 3 ngày tới chưa gán sân phụ trách; ca giao cho nhân viên đã nghỉ/tạm nghỉ
+        upcoming = db.query(Shift).filter(Shift.ngay >= today, Shift.ngay <= today + timedelta(days=3)).all()
+        no_field = [sh for sh in upcoming if not (sh.san_phu_trach or "").strip()]
+        if no_field:
+            khac.append(_item(
+                f"nofield-{len(no_field)}-{today.isoformat()}", "🏟️", "Ca chưa có sân phụ trách",
+                f"{len(no_field)} ca trong 3 ngày tới chưa gán sân phụ trách.",
+                now_utc, "/admin/shifts", False,
+            ))
+        for sh in upcoming:
+            nv = sh.nhan_vien
+            if nv and (nv.tinh_trang_lam_viec in ("TAM_NGHI", "DA_NGHI") or nv.trang_thai == UserStatus.VO_HIEU_HOA):
+                khac.append(_item(
+                    f"absent-{sh.id}", "🚷", "Ca giao cho nhân viên đã nghỉ",
+                    f"{nv.ho_ten} không còn làm việc nhưng có ca {ca_label.get(sh.ca_truc.value, '')} ngày {sh.ngay.strftime('%d/%m')} — cần đổi người.",
+                    now_utc, "/admin/shifts", True,
+                ))
+
+        # Lương tháng trước chưa chuyển (nhân viên có ca trong tháng đó)
+        prev_end = today.replace(day=1) - timedelta(days=1)
+        thang = prev_end.strftime("%Y-%m")
+        worked_ids = {r[0] for r in db.query(Shift.nhan_vien_id).filter(
+            Shift.ngay >= prev_end.replace(day=1), Shift.ngay <= prev_end).distinct().all()}
+        paid_ids = {r[0] for r in db.query(SalaryPayment.nhan_vien_id).filter(
+            SalaryPayment.thang == thang, SalaryPayment.da_chuyen.is_(True)).all()}
+        chua = worked_ids - paid_ids
+        if chua:
+            khac.append(_item(
+                f"salary-{thang}-{len(chua)}", "💵", f"Chưa chuyển lương tháng {prev_end.strftime('%m/%Y')}",
+                f"{len(chua)} nhân viên đã làm việc trong tháng nhưng chưa được xác nhận chuyển lương.",
+                now_utc, "/admin/staff", True,
+            ))
+
+        # Tài khoản khách mới đăng ký trong 24h
+        day_ago = now_utc - timedelta(days=1)
+        new_users = db.query(User).filter(User.vai_tro == UserRole.KHACH_HANG, User.ngay_tao >= day_ago).count()
+        if new_users:
+            khac.append(_item(
+                f"newusers-{new_users}-{today.isoformat()}", "👋", "Khách mới đăng ký",
+                f"{new_users} tài khoản khách hàng mới trong 24 giờ qua.", now_utc, "/admin/users", False,
+            ))
+
+        # Bảo mật: đăng nhập sai / khóa tạm / lạm dụng OTP / vượt giới hạn / chatbot chặn câu độc hại (24h)
+        ev = dict(db.query(SecurityEvent.loai, func.count(SecurityEvent.id)).filter(
+            SecurityEvent.ngay_tao >= day_ago).group_by(SecurityEvent.loai).all())
+        blocked = db.query(ChatAuditLog).filter(ChatAuditLog.loai == "BLOCKED", ChatAuditLog.ngay_tao >= day_ago).count()
+        if ev.get("LOCKED"):
+            khac.append(_item(f"sec-lock-{ev['LOCKED']}-{today.isoformat()}", "🔒", "Có tài khoản/IP bị khóa tạm",
+                              f"{ev['LOCKED']} lần khóa do đăng nhập sai liên tiếp trong 24 giờ qua — có thể có người dò mật khẩu.",
+                              now_utc, "/admin/users", True))
+        if ev.get("LOGIN_FAIL", 0) >= 5:
+            khac.append(_item(f"sec-fail-{ev['LOGIN_FAIL']}-{today.isoformat()}", "🛡️", "Nhiều lần đăng nhập sai",
+                              f"{ev['LOGIN_FAIL']} lần đăng nhập sai trong 24 giờ qua.", now_utc, "/admin/users", False))
+        abuse = ev.get("OTP_ABUSE", 0) + ev.get("RATE_LIMIT", 0)
+        if abuse:
+            khac.append(_item(f"sec-abuse-{abuse}-{today.isoformat()}", "🚨", "Phát hiện thao tác bất thường",
+                              f"{abuse} yêu cầu bị chặn do gửi dồn dập (OTP/API) trong 24 giờ qua.", now_utc, "/admin/users", True))
+        if blocked:
+            khac.append(_item(f"sec-chat-{blocked}-{today.isoformat()}", "🤖", "Chatbot đã chặn câu nguy hiểm",
+                              f"{blocked} tin nhắn có dấu hiệu tấn công/dò bí mật bị chặn trong 24 giờ qua.", now_utc, "/admin/users", blocked >= 3))
+
+    for group in (dat_san, dich_vu, danh_gia, khac):
         group.sort(key=lambda x: x["time"], reverse=True)
 
-    return {"dat_san": dat_san, "dich_vu": dich_vu, "danh_gia": danh_gia}
+    return {"dat_san": dat_san, "dich_vu": dich_vu, "danh_gia": danh_gia, "khac": khac}

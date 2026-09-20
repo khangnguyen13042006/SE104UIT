@@ -217,3 +217,14 @@ class ChatAuditLog(Base):
     cong_cu = Column(String(60), nullable=True)
     chi_tiet = Column(Text, nullable=True)
     ket_qua = Column(Text, nullable=True)
+
+
+class SecurityEvent(Base):
+    """Sự kiện bảo mật (đăng nhập sai, khóa tạm, lạm dụng OTP, vượt giới hạn) — hiển thị ở chuông thông báo của quản lý."""
+    __tablename__ = "security_events"
+    id = Column(Integer, primary_key=True, index=True)
+    ngay_tao = Column(DateTime, default=datetime.utcnow, index=True)
+    loai = Column(String(20), nullable=False)      # LOGIN_FAIL | LOCKED | OTP_ABUSE | RATE_LIMIT
+    email = Column(String(120), nullable=True)
+    ip = Column(String(64), nullable=True)
+    chi_tiet = Column(String(200), nullable=True)

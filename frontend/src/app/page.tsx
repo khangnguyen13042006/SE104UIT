@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -33,6 +34,8 @@ const STATS = [
 
 export default function HomePage() {
   const router = useRouter();
+  const [loggedIn, setLoggedIn] = useState(false);
+  useEffect(() => setLoggedIn(!!getUser()), []);
 
   // Hàm kiểm tra đăng nhập khi bấm Đặt sân
   const handleBookingClick = (e: React.MouseEvent) => {
@@ -76,9 +79,11 @@ export default function HomePage() {
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </button>
                 
+                {!loggedIn && (
                 <Link href="/register" className="inline-flex items-center gap-2 px-6 py-4 border-2 border-border/80 bg-card/50 backdrop-blur-sm text-foreground rounded-2xl font-semibold hover:bg-secondary hover:border-primary/40 transition-all duration-300">
                   Đăng ký thành viên
                 </Link>
+                )}
               </div>
               <div className="grid grid-cols-4 gap-4 mt-10 pt-8 border-t border-border/80">
                 {STATS.map((stat, i) => (
@@ -152,9 +157,11 @@ export default function HomePage() {
                   <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </button>
                 
+                {!loggedIn && (
                 <Link href="/register" className="inline-flex items-center justify-center gap-2 px-8 py-4 border-2 border-white/30 text-white rounded-2xl font-semibold hover:bg-white/10 transition-colors">
                   Tạo tài khoản
                 </Link>
+                )}
               </div>
             </div>
           </motion.div>

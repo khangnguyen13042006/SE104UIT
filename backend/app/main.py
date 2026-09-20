@@ -3,7 +3,7 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi.staticfiles import StaticFiles
@@ -14,6 +14,10 @@ from app.routers import (
     chat, staff, notifications
 )
 from app.utils.scheduler import reminder_loop
+from app.core import protect
+from app.core.security import require_roles
+from app.core.config import UserRole
+from app.models import User
 
 # Tạo thư mục lưu trữ ảnh biên lai
 os.makedirs("uploads/receipts", exist_ok=True)
@@ -60,6 +64,10 @@ app = FastAPI(
     version="1.2.0",
     lifespan=lifespan,
 )
+
+
+# Đăng ký TRƯỚC CORS để CORS là lớp ngoài cùng (phản hồi 429 vẫn có header CORS, trình duyệt đọc được)
+app.middleware("http")(protect.protect_middleware)
 
 
 # ============ CORS ============
@@ -126,8 +134,8 @@ def health():
 
 
 @app.get("/api/debug/db")
-def debug_db():
-    """Returns current DB info — verify connection without exposing credentials."""
+def debug_db(_: User = Depends(require_roles(UserRole.ADMIN))):
+    """Returns current DB info — chỉ admin (không để lộ hạ tầng cho người lạ)."""
     from app.core.database import get_db_info
     return get_db_info()
 

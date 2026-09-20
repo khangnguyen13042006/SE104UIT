@@ -1,6 +1,6 @@
-import random
+import secrets
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import (
@@ -10,6 +10,10 @@ from app.core.config import UserRole, UserStatus
 from app.models import User, EmailOtp
 from app.schemas import UserRegister, UserLogin, Token, UserOut, SendOtpRequest, VerifyOtpRequest
 from app.utils.mailer import send_otp_email
+from app.core import protect
+
+# Băm giả để thời gian phản hồi không lộ email có tồn tại hay không
+_DUMMY_HASH = hash_password("dummy-password-1")
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
@@ -49,10 +53,15 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-def login(payload: UserLogin, db: Session = Depends(get_db)):
+def login(payload: UserLogin, request: Request, db: Session = Depends(get_db)):
+    ip = protect.client_ip(request)
+    protect.assert_login_allowed(payload.email, ip)
     user = db.query(User).filter(User.email == payload.email).first()
-    if not user or not verify_password(payload.mat_khau, user.mat_khau_hash):
+    ok = verify_password(payload.mat_khau, user.mat_khau_hash if user else _DUMMY_HASH)
+    if not user or not ok:
+        protect.record_login_fail(payload.email, ip)
         raise HTTPException(401, "Email hoặc mật khẩu không đúng")
+    protect.record_login_ok(payload.email)
     if user.trang_thai == UserStatus.VO_HIEU_HOA:
         raise HTTPException(403, "Tài khoản đã bị vô hiệu hoá")
     token = create_access_token({"sub": str(user.id), "role": user.vai_tro.value})
@@ -65,10 +74,11 @@ def me(user: User = Depends(get_current_user)):
 
 
 @router.post("/send-otp")
-def send_otp(payload: SendOtpRequest, db: Session = Depends(get_db)):
+def send_otp(payload: SendOtpRequest, request: Request, db: Session = Depends(get_db)):
     """Sinh mã OTP 6 số, lưu vào bảng email_otps (hạn 5 phút) và gửi qua email."""
     email = payload.email.lower()
-    otp_code = "".join(random.choices("0123456789", k=6))
+    protect.limit_otp(email, protect.client_ip(request), verify=False)
+    otp_code = "".join(secrets.choice("0123456789") for _ in range(6))
     record = EmailOtp(
         email=email,
         ma_otp=otp_code,
@@ -82,9 +92,10 @@ def send_otp(payload: SendOtpRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/verify-otp")
-def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
+def verify_otp(payload: VerifyOtpRequest, request: Request, db: Session = Depends(get_db)):
     """Đối chiếu OTP còn hạn, chưa dùng cho email tương ứng."""
     email = payload.email.lower()
+    protect.limit_otp(email, protect.client_ip(request), verify=True)
     record = (
         db.query(EmailOtp)
         .filter(
