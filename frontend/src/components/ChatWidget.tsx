@@ -13,18 +13,15 @@ import {
   Sparkles,
   CalendarCheck2,
   RotateCcw,
-  ShoppingCart,
-  PackagePlus,
   CheckCircle2,
   XCircle,
-  ClipboardCheck,
   MapPin,
-  Settings2,
   Ban,
   Clock,
   Calendar,
 } from "lucide-react";
-import { apiPost, apiPut, formatVND, getUser } from "@/lib/api";
+import { apiPost, getUser } from "@/lib/api";
+import { clearApiCache } from "@/lib/useApi";
 
 const STAFF_ROLES = ["ADMIN", "QUAN_LY", "NHAN_VIEN"];
 
@@ -36,78 +33,33 @@ interface BookingActionPayload {
   duration: number;
 }
 
-interface AddServiceActionPayload {
-  booking_id: number;
-  ma_dat_san: string;
-  dich_vu_id: number;
-  dich_vu_ten: string;
-  don_gia: number;
-  so_luong: number;
-}
-
-interface CreateServiceActionPayload {
-  ten_dich_vu: string;
-  don_gia: number;
-  don_vi_tinh: string;
-  ton_kho: number;
-  la_cho_thue: boolean;
-}
-
-interface ConfirmBookingActionPayload {
-  booking_id: number;
-  ma_dat_san: string;
-  ten_san: string;
-}
-
-interface CancelBookingActionPayload {
-  booking_id: number;
-  ma_dat_san: string;
-  ten_san: string;
-  ly_do_huy: string;
-  hoan_tien: boolean | null;
-  loi_tu_san: boolean | null;
-}
-
-interface CreateFieldActionPayload {
-  ten_san: string;
-  loai_san: string;
-  suc_chua: number;
-  gia_tieu_chuan: number;
-  gia_cao_diem: number;
-  mo_ta: string | null;
-}
-
-interface UpdateFieldActionPayload {
-  field_id: number;
-  ten_san: string;
-  gia_tieu_chuan?: number;
-  gia_cao_diem?: number;
-  trang_thai?: string;
-}
-
 type ActionStatus = "idle" | "loading" | "done" | "error";
 
-type ChatAction =
-  | { type: "booking"; payload: BookingActionPayload }
-  | { type: "add_service"; payload: AddServiceActionPayload; status?: ActionStatus; resultText?: string }
-  | { type: "create_service"; payload: CreateServiceActionPayload; status?: ActionStatus; resultText?: string }
-  | { type: "confirm_booking"; payload: ConfirmBookingActionPayload; status?: ActionStatus; resultText?: string }
-  | { type: "cancel_booking"; payload: CancelBookingActionPayload; status?: ActionStatus; resultText?: string }
-  | { type: "create_field"; payload: CreateFieldActionPayload; status?: ActionStatus; resultText?: string }
-  | { type: "update_field"; payload: UpdateFieldActionPayload; status?: ActionStatus; resultText?: string };
+// Thẻ đề xuất do server dựng (chỉ thực hiện khi bấm xác nhận; server kiểm tra lại chữ ký + quyền)
+interface Proposal {
+  tool: string;
+  title: string;
+  lines: [string, string][];
+  danger: boolean;
+  confirm_label: string;
+  token: string;
+  status?: ActionStatus;
+  resultText?: string;
+}
 
 interface Message {
   sender: "user" | "bot";
   text: string;
-  action?: ChatAction | null;
+  booking?: BookingActionPayload | null;
+  proposals?: Proposal[];
 }
 
 const CUSTOMER_GREETING =
-  "Xin chào! Em là lễ tân ảo Sân Bóng UIT. Anh/chị cần kiểm tra lịch trống, bảng giá hay cần tư vấn chọn sân nào cứ nhắn em nhé!";
+  "Xin chào! Em là lễ tân ảo Sân Bóng UIT. Em xem được sân trống, giá, dịch vụ, ưu đãi; nếu anh/chị đăng nhập, em còn xem/đổi/hủy giúp đơn của mình. Anh/chị cần gì cứ nhắn em nhé!";
 const ADMIN_GREETING =
-  "Xin chào! Em là trợ lý nội bộ. Anh/chị có thể hỏi booking đang chờ xác nhận, dịch vụ sắp hết hàng, đánh giá thấp gần đây, hoặc nhờ em xác nhận/hủy booking, thêm dịch vụ vào bill, tạo dịch vụ mới, thêm sân, sửa giá sân.";
+  "Xin chào! Em là trợ lý nội bộ. Em tra cứu và thao tác được theo đúng quyền của tài khoản anh/chị: đơn đặt sân, dịch vụ, sân, ca trực, lương, báo cáo... Thao tác thay đổi dữ liệu luôn hiện thẻ để anh/chị xác nhận trước.";
 
-const CHAT_STORAGE_KEY = { customer: "kickoff_chat_customer_v1", admin: "kickoff_chat_admin_v1" } as const;
+const CHAT_STORAGE_KEY = { customer: "kickoff_chat_customer_v2", admin: "kickoff_chat_admin_v2" } as const;
 
 function defaultMessages(mode: "customer" | "admin"): Message[] {
   return [{ sender: "bot", text: mode === "admin" ? ADMIN_GREETING : CUSTOMER_GREETING }];
@@ -137,14 +89,17 @@ const CUSTOMER_QUICK_PROMPTS = [
   "⚽ Xem sân trống hôm nay",
   "💰 Bảng giá & Giờ cao điểm",
   "📋 Lịch đá sắp tới của tôi",
-  "💳 Thông tin chuyển khoản STK",
-  "⭐ Ưu đãi thẻ thành viên",
+  "🔁 Đổi lịch / hủy đơn",
+  "⭐ Ưu đãi thành viên",
+  "🤖 Chatbot làm được gì?",
 ];
 const ADMIN_QUICK_PROMPTS = [
-  "📋 Booking nào đang chờ xác nhận?",
+  "🔔 Có việc gì đang chờ xử lý?",
+  "📊 Tổng quan hôm nay",
+  "📋 Đơn nào đang chờ xác nhận?",
   "📦 Dịch vụ nào sắp hết hàng?",
-  "⭐ Có đánh giá thấp gần đây không?",
-  "➕ Tạo dịch vụ mới",
+  "💸 Đơn chờ hoàn tiền",
+  "🤖 Chatbot làm được gì?",
 ];
 
 function formatMessageText(text: string) {
@@ -215,30 +170,20 @@ export default function ChatWidget() {
     setLoading(true);
 
     try {
-      const endpoint = isAdminMode ? "/api/chat/admin" : "/api/chat";
-      const data = await apiPost(endpoint, {
+      const data = await apiPost("/api/chat", {
         message: userText,
         history: messages.slice(-6).map((m) => ({ sender: m.sender, text: m.text })),
       });
 
-      let action: ChatAction | null = null;
-      if (data.booking_action) {
-        action = { type: "booking", payload: data.booking_action };
-      } else if (data.add_service_action) {
-        action = { type: "add_service", payload: data.add_service_action, status: "idle" };
-      } else if (data.create_service_action) {
-        action = { type: "create_service", payload: data.create_service_action, status: "idle" };
-      } else if (data.confirm_booking_action) {
-        action = { type: "confirm_booking", payload: data.confirm_booking_action, status: "idle" };
-      } else if (data.cancel_booking_action) {
-        action = { type: "cancel_booking", payload: data.cancel_booking_action, status: "idle" };
-      } else if (data.create_field_action) {
-        action = { type: "create_field", payload: data.create_field_action, status: "idle" };
-      } else if (data.update_field_action) {
-        action = { type: "update_field", payload: data.update_field_action, status: "idle" };
-      }
-
-      setMessages((prev) => [...prev, { sender: "bot", text: data.reply, action }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: "bot",
+          text: data.reply,
+          booking: data.booking_action || null,
+          proposals: (data.proposals || []).map((p: Proposal) => ({ ...p, status: "idle" as ActionStatus })),
+        },
+      ]);
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -284,86 +229,22 @@ export default function ChatWidget() {
     router.push(`/booking?${query}`);
   };
 
-  function updateActionAt(idx: number, patch: Partial<Extract<ChatAction, { status?: ActionStatus }>>) {
+  function updateProposal(idx: number, pi: number, patch: Partial<Proposal>) {
     setMessages((prev) =>
-      prev.map((m, i) => (i === idx && m.action ? { ...m, action: { ...m.action, ...patch } as ChatAction } : m))
+      prev.map((m, i) =>
+        i === idx && m.proposals ? { ...m, proposals: m.proposals.map((p, j) => (j === pi ? { ...p, ...patch } : p)) } : m
+      )
     );
   }
 
-  const handleAddService = async (idx: number, payload: AddServiceActionPayload) => {
-    updateActionAt(idx, { status: "loading" });
+  const handleConfirm = async (idx: number, pi: number, p: Proposal) => {
+    updateProposal(idx, pi, { status: "loading" });
     try {
-      await apiPost(`/api/bookings/${payload.booking_id}/services`, {
-        dich_vu_id: payload.dich_vu_id,
-        so_luong: payload.so_luong,
-      });
-      updateActionAt(idx, {
-        status: "done",
-        resultText: `Đã thêm ${payload.so_luong} × ${payload.dich_vu_ten} vào bill đơn ${payload.ma_dat_san}.`,
-      });
+      const res = await apiPost("/api/chat/confirm", { token: p.token });
+      clearApiCache(); // dữ liệu đã đổi: các trang quản trị sẽ tải lại thay vì hiện cache cũ
+      updateProposal(idx, pi, { status: "done", resultText: res.message || "Đã thực hiện." });
     } catch (e: any) {
-      updateActionAt(idx, { status: "error", resultText: e.message || "Có lỗi xảy ra, vui lòng thử lại." });
-    }
-  };
-
-  const handleCreateService = async (idx: number, payload: CreateServiceActionPayload) => {
-    updateActionAt(idx, { status: "loading" });
-    try {
-      await apiPost("/api/services", payload);
-      updateActionAt(idx, { status: "done", resultText: `Đã tạo dịch vụ "${payload.ten_dich_vu}" thành công.` });
-    } catch (e: any) {
-      updateActionAt(idx, { status: "error", resultText: e.message || "Có lỗi xảy ra, vui lòng thử lại." });
-    }
-  };
-
-  const handleConfirmBooking = async (idx: number, payload: ConfirmBookingActionPayload) => {
-    updateActionAt(idx, { status: "loading" });
-    try {
-      await apiPost(`/api/bookings/${payload.booking_id}/confirm`);
-      updateActionAt(idx, {
-        status: "done",
-        resultText: `Đã xác nhận đơn ${payload.ma_dat_san} (${payload.ten_san}).`,
-      });
-    } catch (e: any) {
-      updateActionAt(idx, { status: "error", resultText: e.message || "Có lỗi xảy ra, vui lòng thử lại." });
-    }
-  };
-
-  const handleCancelBooking = async (idx: number, payload: CancelBookingActionPayload) => {
-    updateActionAt(idx, { status: "loading" });
-    try {
-      await apiPost(`/api/bookings/${payload.booking_id}/cancel`, {
-        ly_do_huy: payload.ly_do_huy,
-        hoan_tien: payload.hoan_tien,
-        loi_tu_san: payload.loi_tu_san,
-      });
-      updateActionAt(idx, {
-        status: "done",
-        resultText: `Đã hủy đơn ${payload.ma_dat_san} (${payload.ten_san}).`,
-      });
-    } catch (e: any) {
-      updateActionAt(idx, { status: "error", resultText: e.message || "Có lỗi xảy ra, vui lòng thử lại." });
-    }
-  };
-
-  const handleCreateField = async (idx: number, payload: CreateFieldActionPayload) => {
-    updateActionAt(idx, { status: "loading" });
-    try {
-      await apiPost("/api/fields", payload);
-      updateActionAt(idx, { status: "done", resultText: `Đã tạo sân "${payload.ten_san}" thành công.` });
-    } catch (e: any) {
-      updateActionAt(idx, { status: "error", resultText: e.message || "Có lỗi xảy ra, vui lòng thử lại." });
-    }
-  };
-
-  const handleUpdateField = async (idx: number, payload: UpdateFieldActionPayload) => {
-    updateActionAt(idx, { status: "loading" });
-    try {
-      const { field_id, ten_san, ...changes } = payload;
-      await apiPut(`/api/fields/${field_id}`, changes);
-      updateActionAt(idx, { status: "done", resultText: `Đã cập nhật sân "${ten_san}".` });
-    } catch (e: any) {
-      updateActionAt(idx, { status: "error", resultText: e.message || "Có lỗi xảy ra, vui lòng thử lại." });
+      updateProposal(idx, pi, { status: "error", resultText: e.message || "Có lỗi xảy ra, vui lòng thử lại." });
     }
   };
 
@@ -485,26 +366,26 @@ export default function ChatWidget() {
                     <div>{formatMessageText(m.text)}</div>
 
                     {/* Booking Action Card */}
-                    {m.action?.type === "booking" && (
+                    {m.booking && (
                       <div className="mt-3 pt-3 border-t border-border/70">
                         <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 mb-3 space-y-1.5">
                           <div className="flex items-center gap-1.5 font-bold text-emerald-800 dark:text-emerald-300 text-xs">
                             <MapPin className="w-3.5 h-3.5" />
-                            <span>{m.action.payload.field_name}</span>
+                            <span>{m.booking.field_name}</span>
                           </div>
                           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
                             <span className="flex items-center gap-1">
                               <Calendar className="w-3 h-3" />
-                              {m.action.payload.date}
+                              {m.booking.date}
                             </span>
                             <span className="flex items-center gap-1">
                               <Clock className="w-3 h-3" />
-                              {m.action.payload.time} ({m.action.payload.duration}h)
+                              {m.booking.time} ({m.booking.duration}h)
                             </span>
                           </div>
                         </div>
                         <button
-                          onClick={() => handleAutoFill(m.action!.payload as BookingActionPayload)}
+                          onClick={() => handleAutoFill(m.booking!)}
                           className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/30 transition active:scale-[0.98]"
                         >
                           <CalendarCheck2 className="w-4 h-4" />
@@ -513,89 +394,9 @@ export default function ChatWidget() {
                       </div>
                     )}
 
-                    {m.action?.type === "add_service" && (
-                      <ActionCard
-                        icon={<ShoppingCart className="w-3.5 h-3.5" />}
-                        description={`Thêm ${m.action.payload.so_luong} × ${m.action.payload.dich_vu_ten} vào bill đơn ${m.action.payload.ma_dat_san}?`}
-                        buttonLabel="Thêm vào bill"
-                        status={m.action.status}
-                        resultText={m.action.resultText}
-                        onConfirm={() => handleAddService(idx, m.action!.payload as AddServiceActionPayload)}
-                      />
-                    )}
-
-                    {m.action?.type === "create_service" && (
-                      <ActionCard
-                        icon={<PackagePlus className="w-3.5 h-3.5" />}
-                        description={`Tạo dịch vụ mới "${m.action.payload.ten_dich_vu}" — giá ${formatVND(
-                          m.action.payload.don_gia
-                        )}/${m.action.payload.don_vi_tinh}, tồn kho ${m.action.payload.ton_kho}${
-                          m.action.payload.la_cho_thue ? " (đồ cho thuê)" : ""
-                        }?`}
-                        buttonLabel="Tạo dịch vụ"
-                        status={m.action.status}
-                        resultText={m.action.resultText}
-                        onConfirm={() => handleCreateService(idx, m.action!.payload as CreateServiceActionPayload)}
-                      />
-                    )}
-
-                    {m.action?.type === "confirm_booking" && (
-                      <ActionCard
-                        icon={<ClipboardCheck className="w-3.5 h-3.5" />}
-                        description={`Xác nhận đơn ${m.action.payload.ma_dat_san} (${m.action.payload.ten_san})?`}
-                        buttonLabel="Xác nhận đơn"
-                        status={m.action.status}
-                        resultText={m.action.resultText}
-                        onConfirm={() => handleConfirmBooking(idx, m.action!.payload as ConfirmBookingActionPayload)}
-                      />
-                    )}
-
-                    {m.action?.type === "cancel_booking" && (
-                      <ActionCard
-                        icon={<Ban className="w-3.5 h-3.5" />}
-                        description={`Hủy đơn ${m.action.payload.ma_dat_san} (${m.action.payload.ten_san})?${
-                          m.action.payload.loi_tu_san ? " [Lỗi từ sân - hoàn 100%]" : ""
-                        } Lý do: ${m.action.payload.ly_do_huy}`}
-                        buttonLabel="Hủy đơn"
-                        status={m.action.status}
-                        resultText={m.action.resultText}
-                        onConfirm={() => handleCancelBooking(idx, m.action!.payload as CancelBookingActionPayload)}
-                      />
-                    )}
-
-                    {m.action?.type === "create_field" && (
-                      <ActionCard
-                        icon={<MapPin className="w-3.5 h-3.5" />}
-                        description={`Tạo sân mới "${m.action.payload.ten_san}" — loại ${m.action.payload.loai_san}, sức chứa ${m.action.payload.suc_chua}, giá thường ${formatVND(
-                          m.action.payload.gia_tieu_chuan
-                        )}/h, giá cao điểm ${formatVND(m.action.payload.gia_cao_diem)}/h?`}
-                        buttonLabel="Tạo sân"
-                        status={m.action.status}
-                        resultText={m.action.resultText}
-                        onConfirm={() => handleCreateField(idx, m.action!.payload as CreateFieldActionPayload)}
-                      />
-                    )}
-
-                    {m.action?.type === "update_field" && (
-                      <ActionCard
-                        icon={<Settings2 className="w-3.5 h-3.5" />}
-                        description={`Cập nhật sân "${m.action.payload.ten_san}": ${[
-                          m.action.payload.gia_tieu_chuan !== undefined
-                            ? `giá thường → ${formatVND(m.action.payload.gia_tieu_chuan)}/h`
-                            : null,
-                          m.action.payload.gia_cao_diem !== undefined
-                            ? `giá cao điểm → ${formatVND(m.action.payload.gia_cao_diem)}/h`
-                            : null,
-                          m.action.payload.trang_thai ? `trạng thái → ${m.action.payload.trang_thai}` : null,
-                        ]
-                          .filter(Boolean)
-                          .join(", ")}?`}
-                        buttonLabel="Cập nhật sân"
-                        status={m.action.status}
-                        resultText={m.action.resultText}
-                        onConfirm={() => handleUpdateField(idx, m.action!.payload as UpdateFieldActionPayload)}
-                      />
-                    )}
+                    {m.proposals?.map((p, pi) => (
+                      <ProposalCard key={pi} p={p} onConfirm={() => handleConfirm(idx, pi, p)} />
+                    ))}
                   </div>
 
                   {/* User Avatar */}
@@ -651,8 +452,8 @@ export default function ChatWidget() {
                 onKeyDown={(e) => e.key === "Enter" && handleSend()}
                 placeholder={
                   isAdminMode
-                    ? "Hỏi booking, tồn kho, thêm dịch vụ..."
-                    : "Hỏi lịch trống, bảng giá, chọn sân..."
+                    ? "Hỏi hoặc ra lệnh: đơn, dịch vụ, sân, ca, lương..."
+                    : "Hỏi lịch trống, giá, đơn của tôi, đổi/hủy lịch..."
                 }
                 className="flex-1 px-4 py-2.5 bg-background border border-border rounded-full text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition placeholder:text-muted-foreground/70"
               />
@@ -672,51 +473,41 @@ export default function ChatWidget() {
   );
 }
 
-function ActionCard({
-  icon,
-  description,
-  buttonLabel,
-  status,
-  resultText,
-  onConfirm,
-}: {
-  icon: React.ReactNode;
-  description: string;
-  buttonLabel: string;
-  status?: ActionStatus;
-  resultText?: string;
-  onConfirm: () => void;
-}) {
+function ProposalCard({ p, onConfirm }: { p: Proposal; onConfirm: () => void }) {
+  const finished = p.status === "done" || p.status === "error";
   return (
-    <div className="mt-3 pt-2.5 border-t border-border/70">
-      <p className="text-[11px] text-muted-foreground mb-2 flex items-start gap-1.5">
-        <span className="mt-0.5 text-primary shrink-0">{icon}</span>
-        <span>{description}</span>
-      </p>
-
-      {status === "done" || status === "error" ? (
+    <div className={`mt-3 p-3 rounded-xl border ${p.danger ? "border-destructive/40 bg-destructive/5" : "border-primary/30 bg-primary/5"}`}>
+      <div className="text-xs font-bold mb-1.5 flex items-center gap-1.5">
+        {p.danger && <Ban className="w-3.5 h-3.5 text-destructive shrink-0" />}
+        <span>{p.title}</span>
+      </div>
+      <dl className="text-[11px] text-muted-foreground space-y-0.5 mb-2.5">
+        {p.lines.map(([k, v], i) => (
+          <div key={i} className="flex gap-2">
+            <dt className="shrink-0 font-medium">{k}:</dt>
+            <dd className="text-foreground break-words">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      {finished ? (
         <div
           className={`flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-xl ${
-            status === "done"
-              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-              : "bg-destructive/10 text-destructive"
+            p.status === "done" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-destructive/10 text-destructive"
           }`}
         >
-          {status === "done" ? (
-            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-          ) : (
-            <XCircle className="w-3.5 h-3.5 shrink-0" />
-          )}
-          <span>{resultText}</span>
+          {p.status === "done" ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> : <XCircle className="w-3.5 h-3.5 shrink-0" />}
+          <span>{p.resultText}</span>
         </div>
       ) : (
         <button
           onClick={onConfirm}
-          disabled={status === "loading"}
-          className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm transition active:scale-[0.98] disabled:opacity-60"
+          disabled={p.status === "loading"}
+          className={`w-full flex items-center justify-center gap-2 py-2 px-3 text-white rounded-xl text-xs font-semibold shadow-sm transition active:scale-[0.98] disabled:opacity-60 ${
+            p.danger ? "bg-destructive hover:bg-destructive/90" : "bg-emerald-600 hover:bg-emerald-700"
+          }`}
         >
-          {status === "loading" ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-          <span>{status === "loading" ? "Đang xử lý..." : buttonLabel}</span>
+          {p.status === "loading" ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+          <span>{p.status === "loading" ? "Đang xử lý..." : p.confirm_label}</span>
         </button>
       )}
     </div>

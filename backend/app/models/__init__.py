@@ -204,3 +204,16 @@ class SalaryRateChange(Base):
     luong_moi = Column(Integer, nullable=False)
     ngay_ap_dung = Column(Date, nullable=False)
     ngay_thay_doi = Column(DateTime, default=datetime.utcnow)
+
+
+class ChatAuditLog(Base):
+    """Nhật ký chatbot: câu bị chặn, thao tác được đề xuất / thực hiện (phục vụ truy vết & bảo mật)."""
+    __tablename__ = "chat_audit_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    ngay_tao = Column(DateTime, default=datetime.utcnow, index=True)
+    loai = Column(String(20), nullable=False)      # BLOCKED | PROPOSED | EXECUTED | FAILED
+    user_id = Column(Integer, nullable=True)
+    vai_tro = Column(String(20), nullable=True)
+    cong_cu = Column(String(60), nullable=True)
+    chi_tiet = Column(Text, nullable=True)
+    ket_qua = Column(Text, nullable=True)
